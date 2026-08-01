@@ -1,0 +1,11 @@
+logged_at,rep_date,note,filename,avg_velocity_ms,peak_velocity_ms,movement_duration_s,quiet_start_s,f95_Hz,fc_Hz,start_reason,end_reason
+2026-07-22 09:19:22,2026-07-13,1,Pre 1.csv,0.9103,1.933,1.24,8.2,7.8125,7.8125,threshold_crossed,first_velocity_below_0.3_after_buffer
+2026-07-22 09:19:49,2026-07-13,2,Pre 2.csv,0.9184,1.6637,1.03,7.9,6.25,6.25,threshold_crossed,first_velocity_below_0.3_after_buffer
+2026-07-22 09:20:08,2026-07-13,3,Pre 3.csv,0.8177,1.3538,0.91,6.65,4.6875,4.6875,threshold_crossed,first_velocity_below_0.3_after_buffer
+2026-07-22 10:32:46,2026-07-22,2,Pre 2.csv,0.8087,1.5251,1.22,6.9,4.6875,4.6875,threshold_crossed,first_velocity_below_0.3_after_buffer
+2026-07-22 10:34:21,2026-07-15,1,Pre 1.csv,0.9265,1.6065,0.98,6.95,5.4688,5.4688,threshold_crossed,first_velocity_below_0.3_after_buffer
+2026-07-22 10:34:39,2026-07-15,2,Pre 2.csv,0.857,1.6876,1.04,7.7,7.8125,7.8125,threshold_crossed,first_velocity_below_0.3_after_buffer
+2026-07-22 10:35:54,2026-07-15,3,Pre 3.csv,0.7892,1.5028,1.02,8.05,6.25,6.25,threshold_crossed,first_velocity_below_0.3_after_buffer
+2026-07-22 10:39:43,2026-07-22,3,Pre 3.csv,0.7157,1.374,1.2,6.8,4.6875,4.6875,threshold_crossed,first_velocity_below_0.3_after_buffer
+2026-07-31 18:59:11,2026-07-31,post session test,Post 1.csv,0.7928,1.4154,1.03,7.0,5.4688,5.4688,threshold_crossed,first_velocity_below_0.3_after_buffer
+2026-07-31 19:21:29,2026-07-31,post 2,Post 2.csv,0.6574,1.3247,1.17,6.7,7.0312,7.0312,threshold_crossed,first_velocity_below_0.3_after_buffer
