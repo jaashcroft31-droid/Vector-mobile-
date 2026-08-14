@@ -37,7 +37,6 @@ from streamlit_gsheets import GSheetsConnection
 
 import fatigue_processing as fp
 import calendar_view as cal
-import fatigue_model as fmodel
 
 GSHEETS_WORKSHEET = "fatigue_log"
 
@@ -424,34 +423,6 @@ def readiness_bar_figure(history_df: pd.DataFrame, x_col: str, x_title: str) -> 
     return fig
 
 
-def fatigue_model_figure(model_df: pd.DataFrame) -> go.Figure:
-    fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=model_df["date"], y=model_df["freshness"], name="Freshness",
-        marker_color="#94a3b8", opacity=0.5,
-        hovertemplate="%{x}<br>freshness %{y:.1f}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=model_df["date"], y=model_df["capacity"], mode="lines", name="Capacity",
-        line=dict(width=2, color="#2563eb"),
-        hovertemplate="%{x}<br>capacity %{y:.1f}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatter(
-        x=model_df["date"], y=model_df["fatigue"], mode="lines", name="Fatigue",
-        line=dict(width=2, color="#ef4444"),
-        hovertemplate="%{x}<br>fatigue %{y:.1f}<extra></extra>",
-    ))
-    fig.update_layout(
-        title="Capacity, fatigue & freshness over time",
-        xaxis_title="Date",
-        yaxis_title="Load",
-        height=380,
-        margin=dict(l=10, r=10, t=40, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
-    )
-    return fig
-
-
 def history_figure(log_df: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(go.Scatter(
@@ -575,40 +546,6 @@ else:
             readiness_bar_figure(history_df, history_x_col, history_x_title),
             use_container_width=True,
         )
-
-st.divider()
-
-# ==========================================================
-# LONGITUDINAL FATIGUE MODEL
-# ==========================================================
-
-st.subheader("Longitudinal fatigue")
-
-session_loads = fmodel.compute_session_loads(log_df)
-
-if session_loads.empty:
-    st.caption(
-        "No session load data yet - log a Pre-session set AND a Post-session set "
-        "on the same day to start building this. It compares pre- to "
-        "post-session velocity to work out how hard each session was, then "
-        "tracks that over time."
-    )
-else:
-    model_df = fmodel.compute_fatigue_model(log_df)
-    latest = model_df.iloc[-1]
-
-    f1, f2, f3 = st.columns(3)
-    f1.metric("Fatigue", f"{latest['fatigue']:.1f}")
-    f2.metric("Capacity", f"{latest['capacity']:.1f}")
-    f3.metric("Freshness", f"{latest['freshness']:.1f}")
-
-    st.plotly_chart(fatigue_model_figure(model_df), use_container_width=True)
-
-    st.caption(
-        f"{len(session_loads)} session(s) with both Pre- and Post-session data "
-        f"logged so far - the more of those, the more this model reflects reality "
-        f"rather than rest-day decay."
-    )
 
 st.divider()
 
@@ -896,5 +833,5 @@ else:
                 day_log[["logged_at", "category", "note",
                          "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
                 use_container_width=True,
-                hide_index=True,)
-    
+                hide_index=True,
+            )

@@ -3,4 +3,4 @@ pandas
 numpy
 scipy
 plotly
- 
+st-gsheets-connection
