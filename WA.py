@@ -45,6 +45,7 @@ LOG_COLUMNS = [
     "logged_at", "rep_date", "category", "note", "filename",
     "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s",
     "quiet_start_s", "f95_Hz", "fc_Hz", "start_reason", "end_reason",
+    "duration_override_min", "session_title", "session_notes",
 ]
 
 REP_CATEGORIES = ["Pre-session", "Mid-session", "Post-session"]
@@ -92,7 +93,14 @@ def get_spreadsheet_url() -> str:
 
 def load_log() -> pd.DataFrame:
     conn = get_gsheets_conn()
-    df = conn.read(spreadsheet=get_spreadsheet_url(), worksheet=GSHEETS_WORKSHEET, ttl=0)
+    # A generous ttl lets Streamlit serve repeated reads from cache instead
+    # of hitting the Sheets API again - every widget interaction (dragging
+    # a slider, changing a dropdown, not just Save clicks) reruns the whole
+    # script, so without real caching, ordinary fiddling alone can trip
+    # Google's per-minute read quota. save_log() below busts this cache on
+    # every write, so the rerun immediately following any save/merge/clear
+    # still sees fresh data rather than a stale pre-write cache.
+    df = conn.read(spreadsheet=get_spreadsheet_url(), worksheet=GSHEETS_WORKSHEET, ttl=300)
     if df is None:
         return pd.DataFrame(columns=LOG_COLUMNS)
     df = df.dropna(how="all")
@@ -103,14 +111,34 @@ def load_log() -> pd.DataFrame:
 
 
 def save_log(log_df: pd.DataFrame):
+    """Writes the full log to Google Sheets. Called only for deliberate,
+    infrequent actions (committing a session, merging a restore, clearing,
+    setting a duration override) - NOT on every single rep, which is what
+    was tripping the read/write quota. Always clears the pending-reps
+    buffer too, since whatever's in log_df here is either the committed
+    log with no pending reps, or a caller that has already merged pending
+    reps into it and is about to make them official."""
     conn = get_gsheets_conn()
     conn.update(spreadsheet=get_spreadsheet_url(), worksheet=GSHEETS_WORKSHEET, data=log_df[LOG_COLUMNS])
+    st.cache_data.clear()  # so the next read (e.g. after st.rerun()) isn't served stale cache
+    st.session_state["pending_reps"] = []
 
 
-def append_to_log(row: dict):
-    current = load_log()
-    updated = pd.concat([current, pd.DataFrame([row])], ignore_index=True)
+def set_session_details(
+    current_df: pd.DataFrame, rep_date_str: str, minutes: float, title: str, notes: str
+) -> pd.DataFrame:
+    """Sets the session-length override (0 clears it, reverting to the
+    timestamp-based estimate), title, and notes for a day, writing all
+    three onto every row logged that day in a single request - so the
+    editor's one Save button covers everything at once, and the values
+    survive even if an individual rep is later removed."""
+    updated = current_df.copy()
+    mask = updated["rep_date"] == rep_date_str
+    updated.loc[mask, "duration_override_min"] = minutes if minutes > 0 else ""
+    updated.loc[mask, "session_title"] = title
+    updated.loc[mask, "session_notes"] = notes
     save_log(updated)
+    return updated
 
 
 def clear_log():
@@ -512,13 +540,45 @@ def show_readiness(label: str, readiness: dict):
 # MAIN APP
 # ==========================================================
 
-st.title("🧗 Climbing Fatigue Monitor")
+title_col, refresh_col = st.columns([5, 1])
+with title_col:
+    st.title("🧗 Climbing Fatigue Monitor")
+with refresh_col:
+    st.write("")  # small vertical nudge so the button lines up with the title
+    if st.button("🔄 Refresh", help="Pull the latest data from Google Sheets now, instead of waiting"):
+        st.cache_data.clear()
+        st.rerun()
 st.caption(
     "Upload a pull-up accelerometer recording, confirm the quiet-hang start, "
     "and log average + peak velocity to track fatigue over a session."
 )
 
 log_df = load_log()
+
+# ==========================================================
+# LOCALLY-PENDING REPS (not yet written to Google Sheets)
+# ==========================================================
+# "Save to log" below appends to this in-memory buffer instead of writing
+# to Sheets on every rep - each Sheets write costs read/write quota, and
+# writing once per rep during an active session was what tripped Google's
+# per-minute rate limit. Everything in the app (readiness, history,
+# calendar, the pre/post-session counters) reads from log_df below, which
+# already has pending reps merged in, so the app behaves the same either
+# way except for exactly when the data actually leaves this browser tab.
+pending_rows = st.session_state.setdefault("pending_reps", [])
+if pending_rows:
+    log_df = pd.concat(
+        [log_df, pd.DataFrame(pending_rows, columns=LOG_COLUMNS)], ignore_index=True
+    )
+    st.warning(
+        f"📝 {len(pending_rows)} rep(s) logged this session but not yet saved to Google "
+        f"Sheets - they only exist in this browser tab until you save. Closing the tab, "
+        f"refreshing, or the app restarting before then will lose them."
+    )
+    if st.button("💾 Save session to Google Sheets now", type="primary", use_container_width=True):
+        save_log(log_df)
+        st.success(f"Saved {len(pending_rows)} rep(s) to Google Sheets.")
+        st.rerun()
 
 # ==========================================================
 # TODAY'S READINESS
@@ -669,6 +729,12 @@ if uploaded_files:
     with col2:
         note = st.text_input("Note (optional)", placeholder="e.g. session 2, rep 3")
 
+    duration_override = st.number_input(
+        "Session length, minutes (optional - only needed if you're uploading well "
+        "after the session, since timestamps alone won't reflect the real duration)",
+        min_value=0, value=0, step=5,
+    )
+
     if rep_category in REP_CATEGORY_TARGETS:
         target = REP_CATEGORY_TARGETS[rep_category]
         day_str = rep_date.strftime("%Y-%m-%d")
@@ -705,7 +771,7 @@ if uploaded_files:
         st.plotly_chart(rep_velocity_figure(result), use_container_width=True)
 
         if st.button("Save to log", use_container_width=True):
-            append_to_log({
+            row = {
                 "logged_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "rep_date": rep_date.strftime("%Y-%m-%d"),
                 "category": rep_category,
@@ -719,8 +785,17 @@ if uploaded_files:
                 "fc_Hz": round(result.fc_Hz, 4),
                 "start_reason": result.start_reason,
                 "end_reason": result.end_reason,
-            })
-            st.success(f"Saved '{active_name}' to the log as a {rep_category.lower()} rep.")
+                "duration_override_min": duration_override if duration_override > 0 else "",
+                "session_title": "",
+                "session_notes": "",
+            }
+            st.session_state["pending_reps"].append(row)
+            log_df = pd.concat([log_df, pd.DataFrame([row])], ignore_index=True)
+            st.info(
+                f"Logged '{active_name}' as a {rep_category.lower()} rep - saved locally for "
+                f"now. Use the 'Save session to Google Sheets' button near the top when "
+                f"you're done for the day."
+            )
 
         with st.expander("Processing details"):
             st.write(
@@ -790,16 +865,14 @@ with st.expander("Restore or merge a backed-up log"):
                     )
                 st.write(f"Found {len(restore_df)} row(s) in the uploaded file.")
                 if st.button("Merge into current log", use_container_width=True):
-                    current = load_log()
                     for col in LOG_COLUMNS:
                         if col not in restore_df.columns:
                             restore_df[col] = pd.NA
-                    merged = pd.concat([current, restore_df[LOG_COLUMNS]], ignore_index=True)
+                    merged = pd.concat([log_df, restore_df[LOG_COLUMNS]], ignore_index=True)
                     merged = merged.drop_duplicates()
                     save_log(merged)
+                    log_df = merged
                     st.success(f"Merged - log now has {len(merged)} row(s).")
-
-log_df = load_log()  # reload - may include a rep just saved above, or just restored
 
 if log_df.empty:
     st.caption("No reps logged yet - process a rep above and hit 'Save to log'.")
@@ -855,7 +928,8 @@ sessions_df = cal.compute_sessions(log_df)
 if sessions_df.empty:
     st.caption("Log some reps to start building your calendar.")
 else:
-    weekly_df = cal.compute_weekly_summary(sessions_df)
+    fatigue_df = fmodel.compute_fatigue_model(log_df)
+    weekly_df = cal.compute_weekly_summary(sessions_df, fatigue_df)
 
     month_options = sorted(sessions_df["rep_date"].apply(lambda d: (d.year, d.month)).unique(), reverse=True)
     today_ym = (date.today().year, date.today().month)
@@ -870,25 +944,89 @@ else:
         unsafe_allow_html=True,
     )
 
+    month_start = date(year, month, 1)
+    month_end = (date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)) - timedelta(days=1)
+    weeks_this_month = weekly_df[
+        (weekly_df["week_end"] >= month_start) & (weekly_df["week_start"] <= month_end)
+    ]
+    if not weeks_this_month.empty:
+        st.caption("Weekly summary")
+        wk = weeks_this_month.copy()
+        wk["Week"] = wk.apply(lambda r: f"{r['week_start'].strftime('%d %b')} - {r['week_end'].strftime('%d %b')}", axis=1)
+        wk["Sessions"] = wk["sessions"]
+        wk["Duration (min)"] = wk["total_duration_min"].round(0)
+        wk["Total load"] = wk["total_session_load"].round(1)
+        wk["Avg velocity"] = wk["avg_velocity_ms"].round(2)
+        wk["Best velocity"] = wk["best_velocity_ms"].round(2)
+        wk["Fatigue"] = pd.to_numeric(wk["end_fatigue"], errors="coerce").round(1)
+        wk["Capacity"] = pd.to_numeric(wk["end_capacity"], errors="coerce").round(1)
+        wk["Freshness"] = pd.to_numeric(wk["end_freshness"], errors="coerce").round(1)
+        st.dataframe(
+            wk[["Week", "Sessions", "Duration (min)", "Total load", "Avg velocity",
+                "Best velocity", "Fatigue", "Capacity", "Freshness"]],
+            use_container_width=True, hide_index=True,
+        )
+
     days_in_month = sessions_df[
         sessions_df["rep_date"].apply(lambda d: d.year == year and d.month == month)
     ]
     if not days_in_month.empty:
         day_options = sorted(days_in_month["rep_date"].tolist(), reverse=True)
-        day_labels = [d.strftime("%a %d %b") for d in day_options]
 
+        def _day_label(d):
+            row = days_in_month[days_in_month["rep_date"] == d].iloc[0]
+            base = d.strftime("%a %d %b")
+            return f"{base} - {row['session_title']}" if row["session_title"] else base
+
+        day_labels = [_day_label(d) for d in day_options]
+
+        st.caption(
+            "The grid above is read-only (Streamlit can't wire clicks onto it reliably) - "
+            "pick a session here to view or edit it instead."
+        )
         selected_day_label = st.selectbox("Session detail", day_labels, key="calendar_day_select")
         selected_day = day_options[day_labels.index(selected_day_label)]
         day_row = days_in_month[days_in_month["rep_date"] == selected_day].iloc[0]
 
-        d1, d2, d3 = st.columns(3)
+        if day_row["session_title"]:
+            st.markdown(f"**{day_row['session_title']}**")
+
+        d1, d2, d3, d4 = st.columns(4)
         d1.metric("Duration", f"{day_row['duration_min']:.0f} min")
-        d2.metric("Avg velocity", f"{day_row['avg_velocity_ms']:.2f} m/s")
-        d3.metric("Peak velocity", f"{day_row['peak_velocity_ms']:.2f} m/s")
+        d2.metric("Session load", f"{day_row['session_load']:.0f}" if pd.notna(day_row["session_load"]) else "-")
+        d3.metric("Avg velocity", f"{day_row['avg_velocity_ms']:.2f} m/s")
+        d4.metric("Peak velocity", f"{day_row['peak_velocity_ms']:.2f} m/s")
         st.caption(
             f"{int(day_row['pre_reps'])} pre-session, {int(day_row['mid_reps'])} mid-session, "
-            f"{int(day_row['post_reps'])} post-session rep(s)"
+            f"{int(day_row['post_reps'])} post-session rep(s) - duration "
+            + ("set manually" if day_row["duration_is_override"] else "estimated from upload times")
         )
+        if day_row["session_notes"]:
+            st.caption(f"📝 {day_row['session_notes']}")
+
+        with st.expander("Edit this session"):
+            edit_title = st.text_input(
+                "Title", value=day_row["session_title"],
+                placeholder="e.g. Kilnsey session", key=f"title_input_{selected_day.isoformat()}",
+            )
+            edit_notes = st.text_area(
+                "Notes", value=day_row["session_notes"],
+                placeholder="Conditions, how it felt, anything worth remembering",
+                key=f"notes_input_{selected_day.isoformat()}",
+            )
+            edit_duration = st.number_input(
+                "Session length, minutes (0 clears the override and reverts to the "
+                "upload-time estimate)",
+                min_value=0,
+                value=int(day_row["duration_min"]) if day_row["duration_is_override"] else 0,
+                step=5, key=f"override_input_{selected_day.isoformat()}",
+            )
+            if st.button("Save", type="primary", key=f"save_session_{selected_day.isoformat()}"):
+                log_df = set_session_details(
+                    log_df, selected_day.isoformat(), edit_duration, edit_title, edit_notes
+                )
+                st.success(f"Saved changes for {selected_day.isoformat()}.")
+                st.rerun()
 
         with st.expander("Reps logged this day"):
             day_log = log_df[log_df["rep_date"] == selected_day.isoformat()]
@@ -896,5 +1034,5 @@ else:
                 day_log[["logged_at", "category", "note",
                          "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
                 use_container_width=True,
-                hide_index=True,)
-    
+                hide_index=True,
+            )
