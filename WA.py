@@ -61,7 +61,7 @@ READINESS_BASELINE_DAYS = 14
 READINESS_GOOD_BAND_PCT = 5.0
 READINESS_FATIGUE_PCT = 15.0
 
-st.set_page_config(page_title="Climbing Fatigue Monitor", page_icon="🧗", layout="centered")
+st.set_page_config(page_title="VECTOR : measuring climbs with direction and magnitude", page_icon="🧗", layout="centered")
 
 
 # ==========================================================
