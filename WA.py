@@ -452,6 +452,30 @@ def readiness_bar_figure(history_df: pd.DataFrame, x_col: str, x_title: str) -> 
     return fig
 
 
+FATIGUE_RANGE_OPTIONS = ["Last month", "Last 3 months", "Last year", "Custom range"]
+
+
+def resolve_fatigue_range(
+    choice: str, today: date, custom_start: date | None = None, custom_end: date | None = None
+) -> tuple[date, date]:
+    """Turns a range-dropdown choice into a concrete (start, end) window
+    for the fatigue chart. For "Custom range", falls back to `today` for
+    whichever bound the caller hasn't supplied yet (e.g. only one side of
+    the date-range picker has been chosen so far), and swaps the bounds
+    if they came in reversed."""
+    if choice == "Last month":
+        return today - timedelta(days=30), today
+    if choice == "Last 3 months":
+        return today - timedelta(days=90), today
+    if choice == "Last year":
+        return today - timedelta(days=365), today
+    start = custom_start if custom_start is not None else today
+    end = custom_end if custom_end is not None else today
+    if start > end:
+        start, end = end, start
+    return start, end
+
+
 def fatigue_model_figure(model_df: pd.DataFrame) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(go.Bar(
@@ -644,17 +668,11 @@ st.divider()
 
 st.subheader("Longitudinal fatigue")
 
-session_loads = fmodel.compute_session_loads(log_df)
+model_df = fmodel.compute_fatigue_model(log_df)
 
-if session_loads.empty:
-    st.caption(
-        "No session load data yet - log a Pre-session set AND a Post-session set "
-        "on the same day to start building this. It compares pre- to "
-        "post-session velocity to work out how hard each session was, then "
-        "tracks that over time."
-    )
+if model_df.empty:
+    st.caption("Log some reps to start building this.")
 else:
-    model_df = fmodel.compute_fatigue_model(log_df)
     latest = model_df.iloc[-1]
 
     f1, f2, f3 = st.columns(3)
@@ -662,13 +680,45 @@ else:
     f2.metric("Capacity", f"{latest['capacity']:.1f}")
     f3.metric("Freshness", f"{latest['freshness']:.1f}")
 
-    st.plotly_chart(fatigue_model_figure(model_df), use_container_width=True)
+    range_choice = st.selectbox("Time range", FATIGUE_RANGE_OPTIONS, key="fatigue_range_select")
 
-    st.caption(
-        f"{len(session_loads)} session(s) with both Pre- and Post-session data "
-        f"logged so far - the more of those, the more this model reflects reality "
-        f"rather than rest-day decay."
-    )
+    today = date.today()
+    custom_start = custom_end = None
+    if range_choice == "Custom range":
+        earliest = model_df["date"].min()
+        picked = st.date_input(
+            "Custom date range", value=(earliest, today),
+            min_value=earliest, max_value=today, key="fatigue_custom_range",
+        )
+        if isinstance(picked, (tuple, list)) and len(picked) == 2:
+            custom_start, custom_end = picked
+        elif isinstance(picked, (tuple, list)) and len(picked) == 1:
+            custom_start = custom_end = picked[0]
+        elif picked is not None:
+            custom_start = custom_end = picked
+
+    start, end = resolve_fatigue_range(range_choice, today, custom_start, custom_end)
+    windowed_df = model_df[(model_df["date"] >= start) & (model_df["date"] <= end)]
+
+    if windowed_df.empty:
+        st.caption("No data in the selected range.")
+    else:
+        st.plotly_chart(fatigue_model_figure(windowed_df), use_container_width=True)
+
+    session_loads = fmodel.compute_session_loads(log_df)
+    if session_loads.empty:
+        st.caption(
+            "No session load data yet - log a Pre-session set AND a Post-session set "
+            "on the same day to start building this. It compares pre- to "
+            "post-session velocity to work out how hard each session was, then "
+            "tracks that over time."
+        )
+    else:
+        st.caption(
+            f"{len(session_loads)} session(s) with both Pre- and Post-session data "
+            f"logged so far - the more of those, the more this model reflects reality "
+            f"rather than rest-day decay."
+        )
 
 st.divider()
 

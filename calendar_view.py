@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import calendar as _calendar
 from datetime import date, timedelta
+from html import escape as _escape
 
 import pandas as pd
 
@@ -190,9 +191,15 @@ def build_calendar_html(
                     f"<div class='cfm-load'>load {sess['session_load']:.0f}</div>"
                     if pd.notna(sess["session_load"]) else ""
                 )
+                title = str(sess.get("session_title") or "").strip()
+                title_line = (
+                    f"<div class='cfm-title' title='{_escape(title, quote=True)}'>{_escape(title)}</div>"
+                    if title else ""
+                )
                 day_cells.append(
                     "<td class='cfm-session'>"
                     f"<div class='cfm-daynum'>{day_num}</div>"
+                    f"{title_line}"
                     f"<div class='cfm-badge'>{int(sess['reps'])} reps</div>"
                     f"<div class='cfm-mins'>{sess['duration_min']:.0f} min</div>"
                     f"{load_line}"
@@ -223,6 +230,8 @@ def build_calendar_html(
 .cfm-cal td {{ border: 1px solid #e5e7eb; vertical-align: top; padding: 4px 6px; min-height: 56px; width: 12%; }}
 .cfm-cal td.cfm-empty {{ background: #fafafa; border-color: #f0f0f0; }}
 .cfm-daynum {{ font-weight: 600; color: #374151; }}
+.cfm-title {{ font-weight: 600; color: #047857; font-size: 0.78em; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%; }}
 .cfm-session {{ background: #ecfdf5; }}
 .cfm-badge {{ color: #059669; font-size: 0.78em; }}
 .cfm-mins {{ color: #6b7280; font-size: 0.78em; }}
