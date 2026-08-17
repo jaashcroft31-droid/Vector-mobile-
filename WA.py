@@ -61,7 +61,7 @@ READINESS_BASELINE_DAYS = 14
 READINESS_GOOD_BAND_PCT = 5.0
 READINESS_FATIGUE_PCT = 15.0
 
-st.set_page_config(page_title="VECTOR : measuring climbs with direction and magnitude", page_icon="🧗", layout="centered")
+st.set_page_config(page_title="VECTOR", page_icon="🧗", layout="centered")
 
 
 # ==========================================================
@@ -566,7 +566,8 @@ def show_readiness(label: str, readiness: dict):
 
 title_col, refresh_col = st.columns([5, 1])
 with title_col:
-    st.title("🧗 Climbing Fatigue Monitor")
+    st.title("🧗 VECTOR")
+    st.caption ("Measuring Climbs with Direction and Magnitude")
 with refresh_col:
     st.write("")  # small vertical nudge so the button lines up with the title
     if st.button("🔄 Refresh", help="Pull the latest data from Google Sheets now, instead of waiting"):
