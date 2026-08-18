@@ -30,9 +30,20 @@ import fatigue_model as fm
 
 WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
+# Maps compute_relative_session_load's load_band to the day cell's colour
+# class - a session with no computable load (no Pre/Post pairing that day)
+# falls back to "cfm-session", a neutral grey rather than any of the three
+# heat-map colours, since there's genuinely nothing to classify.
+LOAD_BAND_CLASS = {
+    "light": "cfm-load-light",
+    "moderate": "cfm-load-moderate",
+    "heavy": "cfm-load-heavy",
+}
+
 SESSION_COLUMNS = [
     "rep_date", "reps", "pre_reps", "mid_reps", "post_reps",
     "duration_min", "duration_is_override", "session_load",
+    "relative_load_ratio", "load_band",
     "session_title", "session_notes", "avg_velocity_ms", "peak_velocity_ms",
 ]
 
@@ -96,6 +107,9 @@ def compute_sessions(log_df: pd.DataFrame) -> pd.DataFrame:
 
     session_loads = fm.compute_session_loads(log_df)  # columns: rep_date, session_load
     sessions_df = sessions_df.merge(session_loads, on="rep_date", how="left")
+
+    relative_loads = fm.compute_relative_session_load(log_df)  # columns: rep_date, relative_load_ratio, load_band
+    sessions_df = sessions_df.merge(relative_loads, on="rep_date", how="left")
 
     return sessions_df[SESSION_COLUMNS]
 
@@ -196,8 +210,9 @@ def build_calendar_html(
                     f"<div class='cfm-title' title='{_escape(title, quote=True)}'>{_escape(title)}</div>"
                     if title else ""
                 )
+                band_class = LOAD_BAND_CLASS.get(sess.get("load_band"), "cfm-session")
                 day_cells.append(
-                    "<td class='cfm-session'>"
+                    f"<td class='{band_class}'>"
                     f"<div class='cfm-daynum'>{day_num}</div>"
                     f"{title_line}"
                     f"<div class='cfm-badge'>{int(sess['reps'])} reps</div>"
@@ -232,7 +247,10 @@ def build_calendar_html(
 .cfm-daynum {{ font-weight: 600; color: #374151; }}
 .cfm-title {{ font-weight: 600; color: #047857; font-size: 0.78em; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; max-width: 100%; }}
-.cfm-session {{ background: #ecfdf5; }}
+.cfm-session {{ background: #f3f4f6; }}
+.cfm-load-light {{ background: #eff6ff; }}
+.cfm-load-moderate {{ background: #fefce8; }}
+.cfm-load-heavy {{ background: #fef2f2; }}
 .cfm-badge {{ color: #059669; font-size: 0.78em; }}
 .cfm-mins {{ color: #6b7280; font-size: 0.78em; }}
 .cfm-load {{ color: #7c3aed; font-size: 0.78em; }}

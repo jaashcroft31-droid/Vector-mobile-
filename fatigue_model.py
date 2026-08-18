@@ -50,8 +50,24 @@ FATIGUE_EXPONENT = 0.2   # weight given to each new session's load
 FATIGUE_DECAY = 0.1      # fraction fatigue fades by, per rest day
 CAPACITY_WINDOW_DAYS = 35
 
+# Relative session load (for the calendar heat map): each session is
+# classified against that athlete's own recent *typical session* load -
+# deliberately NOT `capacity`, since capacity is diluted by rest days
+# (by design, for the Fitness/Fatigue chart) and would make almost every
+# normal session look "heavy" simply because most calendar days aren't
+# session days. "Typical" here means the mean session_load over the prior
+# LOAD_TYPICAL_WINDOW_DAYS days' worth of *sessions only*, looking
+# backward from (but not including) the day being classified - so a
+# single huge session can't inflate its own comparison baseline.
+LOAD_TYPICAL_WINDOW_DAYS = 35
+LOAD_LIGHT_THRESHOLD = 0.7   # below 70% of recent typical -> light
+LOAD_HEAVY_THRESHOLD = 1.3   # above 130% of recent typical -> heavy
+LOAD_TYPICAL_MIN_FLOOR = 1.0  # typical load below this is too small/noisy
+                               # to classify meaningfully -> "moderate"
+
 SESSION_LOAD_COLUMNS = ["rep_date", "session_load"]
 MODEL_COLUMNS = ["date", "session_load", "fatigue", "capacity", "freshness"]
+RELATIVE_LOAD_COLUMNS = ["rep_date", "relative_load_ratio", "load_band"]
 
 
 def compute_session_loads(log_df: pd.DataFrame) -> pd.DataFrame:
@@ -142,3 +158,55 @@ def compute_fatigue_model(log_df: pd.DataFrame, through_date: date | None = None
         d += timedelta(days=1)
 
     return pd.DataFrame(rows, columns=MODEL_COLUMNS)
+
+
+def compute_relative_session_load(log_df: pd.DataFrame) -> pd.DataFrame:
+    """One row per day with a computable session_load: how that session
+    compares to this athlete's own recent typical session (see the
+    LOAD_* constants above for the exact definition), classified into
+    "light" / "moderate" / "heavy". Powers the calendar's colour-coded
+    heat map.
+
+    This is a relative, adaptive read of a single signal (velocity loss)
+    - useful for spotting a session that stands out from someone's own
+    recent pattern, but it is NOT a validated overtraining/injury-risk
+    score on its own. Load:capacity-style ratios are genuinely contested
+    in the sports-science literature even with much richer data than a
+    single metric provides, so treat "heavy" as "worth a look", not as a
+    diagnosis.
+
+    The very first session (and any day whose recent window has no prior
+    sessions to compare against yet) has no baseline to judge against and
+    is classified "moderate" by default, with relative_load_ratio = None.
+    """
+    session_loads = compute_session_loads(log_df)
+    if session_loads.empty:
+        return pd.DataFrame(columns=RELATIVE_LOAD_COLUMNS)
+
+    session_loads = session_loads.sort_values("rep_date").reset_index(drop=True)
+    dates = session_loads["rep_date"].tolist()
+    loads = session_loads["session_load"].tolist()
+
+    rows = []
+    for i, d in enumerate(dates):
+        window_start = d - timedelta(days=LOAD_TYPICAL_WINDOW_DAYS)
+        prior_loads = [loads[j] for j in range(i) if window_start <= dates[j] < d]
+
+        if not prior_loads:
+            ratio, band = None, "moderate"
+        else:
+            typical = sum(prior_loads) / len(prior_loads)
+            if typical < LOAD_TYPICAL_MIN_FLOOR:
+                ratio, band = None, "moderate"
+            else:
+                ratio = loads[i] / typical
+                if ratio < LOAD_LIGHT_THRESHOLD:
+                    band = "light"
+                elif ratio > LOAD_HEAVY_THRESHOLD:
+                    band = "heavy"
+                else:
+                    band = "moderate"
+
+        rows.append({"rep_date": d, "relative_load_ratio": ratio, "load_band": band})
+
+    return pd.DataFrame(rows, columns=RELATIVE_LOAD_COLUMNS)
