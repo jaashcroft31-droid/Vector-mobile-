@@ -61,7 +61,83 @@ READINESS_BASELINE_DAYS = 14
 READINESS_GOOD_BAND_PCT = 5.0
 READINESS_FATIGUE_PCT = 15.0
 
-st.set_page_config(page_title="VECTOR", page_icon="🧗", layout="centered")
+
+# ==========================================================
+# EXPLAINER TEXT (shown in "How this works" expanders and the About tab)
+# ==========================================================
+
+EXPLAINER_REP_CATEGORIES = (
+    "Every pull-up you log is tagged as one of three types, and each feeds a "
+    "different part of VECTOR. Pre-session: 3 reps done fresh, before you start "
+    f"climbing – this is what Daily readiness compares against your recent "
+    "average. Mid-session: reps done during your session, to track how you're "
+    f"fading as it goes on – this is what Send readiness is based on. "
+    f"Post-session: 3 reps done after you finish – paired with that day's "
+    "Pre-session reps, this feeds the session load calculation, which in turn "
+    "drives the Long-term training effect model. Choosing the right category "
+    "when you upload a rep is what makes the rest of VECTOR work correctly."
+)
+
+EXPLAINER_DAILY_READINESS = (
+    "This compares your pre-session pull-up performance today to your average "
+    "performance over the last 2 weeks. This allows for pre-emptive changes to "
+    "the planned training depending on performance, allowing you to get the "
+    "most out of every session."
+)
+
+EXPLAINER_READINESS_GRAPH = (
+    "Furthermore, the graph underneath shows individual readiness scores for "
+    "each day. A score of 100 means your readiness today matches your average "
+    "performance over the last 2 weeks. Anything over 100 means more freshness "
+    "than usual, and a score of less than 100 is slightly tired; less than 90 "
+    "is quite tired, and less than 80 is very tired."
+)
+
+EXPLAINER_SEND_READINESS = (
+    "This feature builds on the readiness concept and applies it to a "
+    "within-session environment. Rather than comparing to your pre-session "
+    "baseline, this tool compares your latest rep in a session to the average "
+    f"of your earlier reps in that same session – giving a real-time "
+    "read on how much you're fading as the session goes on."
+)
+
+EXPLAINER_LONG_TERM = (
+    "This feature allows coaches and athletes to see how their training is "
+    "stacking up over time. It tracks three numbers: Fatigue (how much recent "
+    "training is currently weighing on you), Capacity (the training load "
+    "you've built up the ability to handle), and Freshness (the gap between "
+    "the two). When Freshness is low, recent load is outpacing what you're "
+    "used to handling, which is a good time to ease off; when it's high, "
+    "there's room to push."
+)
+
+EXPLAINER_CALENDAR = (
+    "The calendar lays out your logged sessions month by month, so you and "
+    "your coach can see training load and volume at a glance. Each session "
+    "shows how long it was and its session load, colour-coded against your "
+    f"own recent typical session – blue for a light day, yellow for a "
+    "normal one, red for a session that stood out as unusually hard. A "
+    "weekly summary totals up time, load, and your Fatigue/Capacity/Freshness "
+    "for that week, and tapping into any day lets you add a title and notes, "
+    "or fix the recorded session length if you uploaded it well after the fact."
+)
+
+EXPLAINER_SESSION_UPLOAD = (
+    "This is the heart of VECTOR: upload a pull-up file by following the "
+    "protocol below. The pull-up files can then be uploaded into the app. "
+    "Once the file is selected, simply drag the slider into the middle of "
+    "the quiet hanging period, choose whether it's a Pre-session, Mid-session "
+    "or Post-session rep, and process the file. Then repeat for the remaining "
+    "files. This is then processed by our proprietary algorithms to calculate "
+    "the average and peak velocity. Each processed rep is kept in the app as "
+    "you go, but isn't sent to permanent storage straight away "
+    f"– once all the day's reps are in, click the Save session button "
+    "so you don't lose your stats; closing the app before then will lose "
+    "anything not yet saved."
+)
+
+
+st.set_page_config(page_title="Climbing Fatigue Monitor", page_icon="🧗", layout="centered")
 
 
 # ==========================================================
@@ -417,8 +493,8 @@ def daily_summary_figure(daily_df: pd.DataFrame) -> go.Figure:
         yaxis_title="Velocity (m/s)",
         barmode="group",
         height=380,
-        margin=dict(l=10, r=10, t=40, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(l=10, r=10, t=40, b=70),
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="left", x=0),
     )
     return fig
 
@@ -450,6 +526,16 @@ def readiness_bar_figure(history_df: pd.DataFrame, x_col: str, x_title: str) -> 
         showlegend=False,
     )
     return fig
+
+
+def fmt_signed(value: float, decimals: int = 1) -> str:
+    """Formats a float, collapsing the "-0.0" artifact that shows up when
+    a small negative number rounds to zero (e.g. Freshness at -0.04) -
+    numerically harmless, but reads like a bug on screen."""
+    rounded = round(value, decimals)
+    if rounded == 0:
+        rounded = 0.0
+    return f"{rounded:.{decimals}f}"
 
 
 FATIGUE_RANGE_OPTIONS = ["Last month", "Last 3 months", "Last year", "Custom range"]
@@ -498,8 +584,8 @@ def fatigue_model_figure(model_df: pd.DataFrame) -> go.Figure:
         xaxis_title="Date",
         yaxis_title="Load",
         height=380,
-        margin=dict(l=10, r=10, t=40, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(l=10, r=10, t=40, b=70),
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="left", x=0),
     )
     return fig
 
@@ -519,8 +605,8 @@ def history_figure(log_df: pd.DataFrame) -> go.Figure:
         xaxis_title="Logged at",
         yaxis_title="Velocity (m/s)",
         height=380,
-        margin=dict(l=10, r=10, t=40, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        margin=dict(l=10, r=10, t=40, b=70),
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="left", x=0),
     )
     return fig
 
@@ -560,530 +646,677 @@ def show_readiness(label: str, readiness: dict):
         st.error(text)
 
 
+def about_pre_post_velocity_figure() -> go.Figure:
+    """An illustrative (not live-data) Pre vs Post pull-up velocity curve,
+    for the About tab - recreates the shape of the original explainer
+    document's chart using the same Plotly styling as the rest of the app,
+    via a smooth PCHIP interpolation through a handful of control points."""
+    from scipy.interpolate import PchipInterpolator
+
+    pre_t = np.array([0, 0.10, 0.20, 0.27, 0.35, 0.50, 0.62, 0.75, 0.90, 1.05])
+    pre_v = np.array([0, 0.35, 0.62, 0.68, 0.72, 1.05, 1.40, 1.25, 0.78, 0.35])
+    post_t = np.array([0, 0.10, 0.20, 0.30, 0.40, 0.50, 0.65, 0.85, 1.05, 1.20, 1.32])
+    post_v = np.array([0, 0.15, 0.32, 0.35, 0.38, 0.45, 0.58, 0.65, 0.68, 0.60, 0.48])
+
+    pre_fine_t = np.linspace(0, 1.05, 200)
+    pre_fine_v = PchipInterpolator(pre_t, pre_v)(pre_fine_t)
+    post_fine_t = np.linspace(0, 1.32, 200)
+    post_fine_v = PchipInterpolator(post_t, post_v)(post_fine_t)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=pre_fine_t, y=pre_fine_v, mode="lines", name="Pre",
+        line=dict(width=3, color="#2563eb"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=post_fine_t, y=post_fine_v, mode="lines", name="Post",
+        line=dict(width=3, color="#ea580c"),
+    ))
+    fig.update_layout(
+        xaxis_title="Time (s)",
+        yaxis_title="Velocity (m/s)",
+        height=340,
+        margin=dict(l=10, r=10, t=20, b=70),
+        legend=dict(orientation="h", yanchor="top", y=-0.18, xanchor="left", x=0),
+    )
+    return fig
+
+
 # ==========================================================
 # MAIN APP
 # ==========================================================
 
-title_col, refresh_col = st.columns([5, 1])
-with title_col:
-    st.title("🧗 VECTOR")
-    st.caption ("Measuring Climbs with Direction and Magnitude")
-with refresh_col:
-    st.write("")  # small vertical nudge so the button lines up with the title
-    if st.button("🔄 Refresh", help="Pull the latest data from Google Sheets now, instead of waiting"):
-        st.cache_data.clear()
-        st.rerun()
-st.caption(
-    "Upload a pull-up accelerometer recording, confirm the quiet-hang start, "
-    "and log average + peak velocity to track fatigue over a session."
-)
+tab_main, tab_about = st.tabs(["🧗 VECTOR", "About"])
 
-log_df = load_log()
-
-# ==========================================================
-# LOCALLY-PENDING REPS (not yet written to Google Sheets)
-# ==========================================================
-# "Save to log" below appends to this in-memory buffer instead of writing
-# to Sheets on every rep - each Sheets write costs read/write quota, and
-# writing once per rep during an active session was what tripped Google's
-# per-minute rate limit. Everything in the app (readiness, history,
-# calendar, the pre/post-session counters) reads from log_df below, which
-# already has pending reps merged in, so the app behaves the same either
-# way except for exactly when the data actually leaves this browser tab.
-pending_rows = st.session_state.setdefault("pending_reps", [])
-if pending_rows:
-    log_df = pd.concat(
-        [log_df, pd.DataFrame(pending_rows, columns=LOG_COLUMNS)], ignore_index=True
-    )
-    st.warning(
-        f"📝 {len(pending_rows)} rep(s) logged this session but not yet saved to Google "
-        f"Sheets - they only exist in this browser tab until you save. Closing the tab, "
-        f"refreshing, or the app restarting before then will lose them."
-    )
-    if st.button("💾 Save session to Google Sheets now", type="primary", use_container_width=True):
-        save_log(log_df)
-        st.success(f"Saved {len(pending_rows)} rep(s) to Google Sheets.")
-        st.rerun()
-
-# ==========================================================
-# TODAY'S READINESS
-# ==========================================================
-
-st.subheader("Today's readiness")
-
-readiness_mode = st.selectbox(
-    "Readiness mode",
-    ["Training readiness (vs last 14 days)", "Session readiness (vs today's reps)"],
-)
-
-if log_df.empty:
-    st.caption("Log some reps to see today's readiness.")
-else:
-    today = date.today()
-
-    if readiness_mode.startswith("Training"):
-        daily_df = compute_daily_summary(log_df, category="Pre-session")
-        readiness_avg = compute_readiness(daily_df, "avg_velocity_ms", today)
-        readiness_peak = compute_readiness(daily_df, "peak_velocity_ms", today)
-        not_enough_msg = (
-            f"Log 3 Pre-session reps today, plus some Pre-session history from "
-            f"the last {READINESS_BASELINE_DAYS} days, to see training readiness."
-        )
-        history_df = compute_training_readiness_history(daily_df)
-        history_x_col, history_x_title = "rep_date", "Date"
-        history_empty_msg = (
-            f"Not enough day-to-day Pre-session history yet to chart training "
-            f"readiness - need at least one prior day within the last "
-            f"{READINESS_BASELINE_DAYS} days."
-        )
-    else:
-        readiness_avg = compute_session_readiness(log_df, "avg_velocity_ms", today)
-        readiness_peak = compute_session_readiness(log_df, "peak_velocity_ms", today)
-        not_enough_msg = "Log at least 2 Mid-session reps today to see session readiness."
-        history_df = compute_session_readiness_history(log_df, today)
-        history_x_col, history_x_title = "rep_number", "Rep number today"
-        history_empty_msg = "Log a Mid-session rep today to see the session readiness chart."
-
-    if readiness_avg is None or readiness_peak is None:
-        st.caption(not_enough_msg)
-    else:
-        score = compute_readiness_score(readiness_avg, readiness_peak)
-        icon = READINESS_SCORE_ICON[score["category"]]
-        with st.expander(f"{icon}  Readiness score: {score['score']:.1f}"):
-            show_readiness("Average velocity", readiness_avg)
-            show_readiness("Peak velocity", readiness_peak)
-
-    if history_df.empty:
-        st.caption(history_empty_msg)
-    else:
-        st.plotly_chart(
-            readiness_bar_figure(history_df, history_x_col, history_x_title),
-            use_container_width=True,
-        )
-
-st.divider()
-
-# ==========================================================
-# LONGITUDINAL FATIGUE MODEL
-# ==========================================================
-
-st.subheader("Longitudinal fatigue")
-
-model_df = fmodel.compute_fatigue_model(log_df)
-
-if model_df.empty:
-    st.caption("Log some reps to start building this.")
-else:
-    latest = model_df.iloc[-1]
-
-    f1, f2, f3 = st.columns(3)
-    f1.metric("Fatigue", f"{latest['fatigue']:.1f}")
-    f2.metric("Capacity", f"{latest['capacity']:.1f}")
-    f3.metric("Freshness", f"{latest['freshness']:.1f}")
-
-    range_choice = st.selectbox("Time range", FATIGUE_RANGE_OPTIONS, key="fatigue_range_select")
-
-    today = date.today()
-    custom_start = custom_end = None
-    if range_choice == "Custom range":
-        earliest = model_df["date"].min()
-        picked = st.date_input(
-            "Custom date range", value=(earliest, today),
-            min_value=earliest, max_value=today, key="fatigue_custom_range",
-        )
-        if isinstance(picked, (tuple, list)) and len(picked) == 2:
-            custom_start, custom_end = picked
-        elif isinstance(picked, (tuple, list)) and len(picked) == 1:
-            custom_start = custom_end = picked[0]
-        elif picked is not None:
-            custom_start = custom_end = picked
-
-    start, end = resolve_fatigue_range(range_choice, today, custom_start, custom_end)
-    windowed_df = model_df[(model_df["date"] >= start) & (model_df["date"] <= end)]
-
-    if windowed_df.empty:
-        st.caption("No data in the selected range.")
-    else:
-        st.plotly_chart(fatigue_model_figure(windowed_df), use_container_width=True)
-
-    session_loads = fmodel.compute_session_loads(log_df)
-    if session_loads.empty:
-        st.caption(
-            "No session load data yet - log a Pre-session set AND a Post-session set "
-            "on the same day to start building this. It compares pre- to "
-            "post-session velocity to work out how hard each session was, then "
-            "tracks that over time."
-        )
-    else:
-        st.caption(
-            f"{len(session_loads)} session(s) with both Pre- and Post-session data "
-            f"logged so far - the more of those, the more this model reflects reality "
-            f"rather than rest-day decay."
-        )
-
-st.divider()
-
-# ==========================================================
-# UPLOAD & PROCESS A REP
-# ==========================================================
-
-uploaded_files = st.file_uploader(
-    "Upload accelerometer CSV(s)", type=["csv"], accept_multiple_files=True,
-)
-
-if uploaded_files:
-    file_names = [f.name for f in uploaded_files]
-    active_name = st.selectbox("Which file are you working on?", file_names)
-    active_file = next(f for f in uploaded_files if f.name == active_name)
-
-    # Read the CSV fresh each time the active file is selected (cheap for
-    # accelerometer-sized files, and keeps this simple to reason about).
-    active_file.seek(0)
-    try:
-        df = pd.read_csv(active_file)
-    except Exception as e:
-        st.error(f"Couldn't read '{active_name}' as a CSV: {e}")
-        st.stop()
-
-    if df.shape[1] < 4:
-        st.error(
-            f"'{active_name}' has only {df.shape[1]} column(s) - expected at least 4 "
-            "(time, gFx, gFy, gFz)."
-        )
-        st.stop()
-
-    try:
-        trace = fp.load_full_trace(df)
-    except Exception as e:
-        st.error(f"Couldn't process '{active_name}': {e}")
-        st.stop()
-
-    slider_key = f"quiet_start_{active_name}_{active_file.size}"
-    if slider_key not in st.session_state:
-        st.session_state[slider_key] = round(fp.suggest_quiet_start_s(trace), 2)
-
-    quiet_start_s = st.slider(
-        "Quiet-hang start (s)",
-        min_value=float(trace.t[0]),
-        max_value=float(trace.t[-1]),
-        step=0.05,
-        key=slider_key,
+with tab_main:
+    title_col, refresh_col = st.columns([5, 1])
+    with title_col:
+        st.title("🧗 Climbing Fatigue Monitor")
+    with refresh_col:
+        st.write("")  # small vertical nudge so the button lines up with the title
+        if st.button("🔄 Refresh", help="Pull the latest data from Google Sheets now, instead of waiting"):
+            st.cache_data.clear()
+            st.rerun()
+    st.caption(
+        "Upload a pull-up accelerometer recording, confirm the quiet-hang start, "
+        "and log average + peak velocity to track fatigue over a session."
     )
 
-    st.plotly_chart(full_trace_figure(trace, quiet_start_s), use_container_width=True)
+    log_df = load_log()
 
-    rep_category = st.selectbox("Rep type", REP_CATEGORIES, index=1)  # default Mid-session
+    # ==========================================================
+    # LOCALLY-PENDING REPS (not yet written to Google Sheets)
+    # ==========================================================
+    # "Save to log" below appends to this in-memory buffer instead of writing
+    # to Sheets on every rep - each Sheets write costs read/write quota, and
+    # writing once per rep during an active session was what tripped Google's
+    # per-minute rate limit. Everything in the app (readiness, history,
+    # calendar, the pre/post-session counters) reads from log_df below, which
+    # already has pending reps merged in, so the app behaves the same either
+    # way except for exactly when the data actually leaves this browser tab.
+    pending_rows = st.session_state.setdefault("pending_reps", [])
+    if pending_rows:
+        log_df = pd.concat(
+            [log_df, pd.DataFrame(pending_rows, columns=LOG_COLUMNS)], ignore_index=True
+        )
+        st.warning(
+            f"📝 {len(pending_rows)} rep(s) logged this session but not yet saved to Google "
+            f"Sheets - they only exist in this browser tab until you save. Closing the tab, "
+            f"refreshing, or the app restarting before then will lose them."
+        )
+        if st.button("💾 Save session to Google Sheets now", type="primary", use_container_width=True):
+            save_log(log_df)
+            st.success(f"Saved {len(pending_rows)} rep(s) to Google Sheets.")
+            st.rerun()
 
-    col1, col2 = st.columns(2)
-    with col1:
-        rep_date = st.date_input("Date", value=date.today())
-    with col2:
-        note = st.text_input("Note (optional)", placeholder="e.g. session 2, rep 3")
+    # ==========================================================
+    # TODAY'S READINESS
+    # ==========================================================
 
-    duration_override = st.number_input(
-        "Session length, minutes (optional - only needed if you're uploading well "
-        "after the session, since timestamps alone won't reflect the real duration)",
-        min_value=0, value=0, step=5,
+    st.subheader("Today's readiness")
+
+    readiness_mode = st.selectbox(
+        "Readiness mode",
+        ["Training readiness (vs last 14 days)", "Session readiness (vs today's reps)"],
     )
 
-    if rep_category in REP_CATEGORY_TARGETS:
-        target = REP_CATEGORY_TARGETS[rep_category]
-        day_str = rep_date.strftime("%Y-%m-%d")
-        count_so_far = 0
-        if not log_df.empty:
-            count_so_far = int((
-                (log_df["rep_date"] == day_str) & (log_df["category"] == rep_category)
-            ).sum())
-        st.caption(f"{rep_category} reps logged for {day_str}: {count_so_far} of {target}")
+    if log_df.empty:
+        st.caption("Log some reps to see today's readiness.")
+    else:
+        today = date.today()
 
-    process_clicked = st.button("Process rep", type="primary", use_container_width=True)
-
-    result_key = f"result_{active_name}_{active_file.size}"
-
-    if process_clicked:
-        try:
-            result = fp.process_rep(df, quiet_start_s)
-            st.session_state[result_key] = result
-        except ValueError as e:
-            st.session_state.pop(result_key, None)
-            st.error(str(e))
-
-    if result_key in st.session_state:
-        result = st.session_state[result_key]
-
-        for w in result.warnings:
-            st.warning(w)
-
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Average velocity", f"{result.avg_velocity_ms:.2f} m/s")
-        m2.metric("Peak velocity", f"{result.peak_velocity_ms:.2f} m/s")
-        m3.metric("Rep duration", f"{result.movement_duration_s:.2f} s")
-
-        st.plotly_chart(rep_velocity_figure(result), use_container_width=True)
-
-        if st.button("Save to log", use_container_width=True):
-            row = {
-                "logged_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "rep_date": rep_date.strftime("%Y-%m-%d"),
-                "category": rep_category,
-                "note": note,
-                "filename": active_name,
-                "avg_velocity_ms": round(result.avg_velocity_ms, 4),
-                "peak_velocity_ms": round(result.peak_velocity_ms, 4),
-                "movement_duration_s": round(result.movement_duration_s, 4),
-                "quiet_start_s": round(result.quiet_start_s, 4),
-                "f95_Hz": round(result.f95_Hz, 4),
-                "fc_Hz": round(result.fc_Hz, 4),
-                "start_reason": result.start_reason,
-                "end_reason": result.end_reason,
-                "duration_override_min": duration_override if duration_override > 0 else "",
-                "session_title": "",
-                "session_notes": "",
-            }
-            st.session_state["pending_reps"].append(row)
-            log_df = pd.concat([log_df, pd.DataFrame([row])], ignore_index=True)
-            st.info(
-                f"Logged '{active_name}' as a {rep_category.lower()} rep - saved locally for "
-                f"now. Use the 'Save session to Google Sheets' button near the top when "
-                f"you're done for the day."
+        if readiness_mode.startswith("Training"):
+            daily_df = compute_daily_summary(log_df, category="Pre-session")
+            readiness_avg = compute_readiness(daily_df, "avg_velocity_ms", today)
+            readiness_peak = compute_readiness(daily_df, "peak_velocity_ms", today)
+            not_enough_msg = (
+                f"Log 3 Pre-session reps today, plus some Pre-session history from "
+                f"the last {READINESS_BASELINE_DAYS} days, to see training readiness."
             )
-
-        with st.expander("Processing details"):
-            st.write(
-                f"- Quiet-hang mean: `{result.quiet_mean_g:.5f}` g, "
-                f"sd: `{result.quiet_sd_g:.5f}` g\n"
-                f"- Movement-start threshold: `{result.start_thresh_g:.5f}` g "
-                f"({result.start_reason})\n"
-                f"- Movement end: {result.end_reason}\n"
-                f"- Spectral cutoff: f95 = `{result.f95_Hz:.2f}` Hz, "
-                f"filter cutoff = `{result.fc_Hz:.2f}` Hz"
+            history_df = compute_training_readiness_history(daily_df)
+            history_x_col, history_x_title = "rep_date", "Date"
+            history_empty_msg = (
+                f"Not enough day-to-day Pre-session history yet to chart training "
+                f"readiness - need at least one prior day within the last "
+                f"{READINESS_BASELINE_DAYS} days."
             )
-            st.plotly_chart(spectral_figure(result), use_container_width=True)
+        else:
+            readiness_avg = compute_session_readiness(log_df, "avg_velocity_ms", today)
+            readiness_peak = compute_session_readiness(log_df, "peak_velocity_ms", today)
+            not_enough_msg = "Log at least 2 Mid-session reps today to see session readiness."
+            history_df = compute_session_readiness_history(log_df, today)
+            history_x_col, history_x_title = "rep_number", "Rep number today"
+            history_empty_msg = "Log a Mid-session rep today to see the session readiness chart."
 
-            cropped_df = pd.DataFrame({
-                "TimeRel_s": result.t_rel,
-                "Velocity_mps": result.v_mov_ms,
-                "Resultant_corr_filt_g": result.res_mov_corr_g_f,
-            })
-            st.download_button(
-                "Download cropped/filtered rep data (CSV)",
-                data=cropped_df.to_csv(index=False),
-                file_name=f"{Path(active_name).stem}_cropped_filtered.csv",
-                mime="text/csv",
+        if readiness_avg is None or readiness_peak is None:
+            st.caption(not_enough_msg)
+        else:
+            score = compute_readiness_score(readiness_avg, readiness_peak)
+            icon = READINESS_SCORE_ICON[score["category"]]
+            with st.expander(f"{icon}  Readiness score: {score['score']:.1f}"):
+                show_readiness("Average velocity", readiness_avg)
+                show_readiness("Peak velocity", readiness_peak)
+
+        if history_df.empty:
+            st.caption(history_empty_msg)
+        else:
+            st.plotly_chart(
+                readiness_bar_figure(history_df, history_x_col, history_x_title),
                 use_container_width=True,
             )
-else:
-    st.info("Upload one or more CSV files to log a new rep.")
+            st.caption(
+                "🩷 High performance · 🟢 Good performance · 🟡 Low performance · "
+                "🔴 High fatigue - each bar's score is 100 + how far average and peak "
+                "velocity that day differed from baseline."
+            )
 
-st.divider()
+    with st.expander("ℹ️ How this works"):
+        st.markdown(f"**Daily readiness**\n\n{EXPLAINER_DAILY_READINESS}")
+        st.markdown(f"**Readiness graph**\n\n{EXPLAINER_READINESS_GRAPH}")
+        st.markdown(f"**Send readiness**\n\n{EXPLAINER_SEND_READINESS}")
 
-# ==========================================================
-# HISTORY
-# ==========================================================
+    st.divider()
 
-st.subheader("History")
+    # ==========================================================
+    # LONGITUDINAL FATIGUE MODEL
+    # ==========================================================
 
-with st.expander("Restore or merge a backed-up log"):
-    st.caption(
-        "If your log ever gets wiped (e.g. a Streamlit Community Cloud app "
-        "waking up after being asleep), upload a previously downloaded "
-        "fatigue_log.csv here to merge it back in."
-    )
-    restore_file = st.file_uploader(
-        "Upload a backed-up fatigue_log.csv", type=["csv"], key="restore_uploader",
-    )
-    if restore_file is not None:
-        try:
-            restore_df = pd.read_csv(restore_file)
-        except Exception as e:
-            st.error(f"Couldn't read that file: {e}")
-            restore_df = None
+    st.subheader("Longitudinal fatigue")
 
-        if restore_df is not None:
-            required_cols = {"logged_at", "rep_date", "avg_velocity_ms", "peak_velocity_ms"}
-            missing = required_cols - set(restore_df.columns)
-            if missing:
-                st.error(
-                    f"That doesn't look like a fatigue log - missing column(s): "
-                    f"{', '.join(sorted(missing))}"
-                )
-            else:
-                if "category" not in restore_df.columns or restore_df["category"].isna().all():
-                    restore_df["category"] = "Pre-session"
-                    st.caption(
-                        "This file predates rep categories - treating all its rows "
-                        "as Pre-session."
-                    )
-                st.write(f"Found {len(restore_df)} row(s) in the uploaded file.")
-                if st.button("Merge into current log", use_container_width=True):
-                    for col in LOG_COLUMNS:
-                        if col not in restore_df.columns:
-                            restore_df[col] = pd.NA
-                    merged = pd.concat([log_df, restore_df[LOG_COLUMNS]], ignore_index=True)
-                    merged = merged.drop_duplicates()
-                    save_log(merged)
-                    log_df = merged
-                    st.success(f"Merged - log now has {len(merged)} row(s).")
+    model_df = fmodel.compute_fatigue_model(log_df)
 
-if log_df.empty:
-    st.caption("No reps logged yet - process a rep above and hit 'Save to log'.")
-else:
-    daily_df = compute_daily_summary(log_df, category="Pre-session")
-    if daily_df.empty:
-        st.caption("No Pre-session reps logged yet - the daily chart is based on those.")
+    if model_df.empty:
+        st.caption("Log some reps to start building this.")
     else:
-        st.plotly_chart(daily_summary_figure(daily_df), use_container_width=True)
+        latest = model_df.iloc[-1]
 
-    with st.expander("Per-rep detail"):
-        st.plotly_chart(history_figure(log_df), use_container_width=True)
-        st.dataframe(
-            log_df[["logged_at", "rep_date", "category", "note", "filename",
-                    "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
-            use_container_width=True,
-            hide_index=True,
-        )
+        f1, f2, f3 = st.columns(3)
+        f1.metric("Fatigue", fmt_signed(latest['fatigue']))
+        f2.metric("Capacity", fmt_signed(latest['capacity']))
+        f3.metric("Freshness", fmt_signed(latest['freshness']))
 
-    dl_col, clear_col = st.columns(2)
-    with dl_col:
-        st.download_button(
-            "Download full log (CSV)",
-            data=log_df.to_csv(index=False),
-            file_name="fatigue_log.csv",
-            mime="text/csv",
-            use_container_width=True,
-        )
-    with clear_col:
-        if st.button("Clear log", use_container_width=True):
-            st.session_state["confirm_clear"] = True
+        range_choice = st.selectbox("Time range", FATIGUE_RANGE_OPTIONS, key="fatigue_range_select")
 
-    if st.session_state.get("confirm_clear"):
-        st.warning("This deletes every logged rep. Are you sure?")
-        yes_col, no_col = st.columns(2)
-        if yes_col.button("Yes, delete everything", use_container_width=True):
-            clear_log()
-            st.session_state["confirm_clear"] = False
-            st.rerun()
-        if no_col.button("Cancel", use_container_width=True):
-            st.session_state["confirm_clear"] = False
+        today = date.today()
+        custom_start = custom_end = None
+        if range_choice == "Custom range":
+            earliest = model_df["date"].min()
+            picked = st.date_input(
+                "Custom date range", value=(earliest, today),
+                min_value=earliest, max_value=today, key="fatigue_custom_range",
+            )
+            if isinstance(picked, (tuple, list)) and len(picked) == 2:
+                custom_start, custom_end = picked
+            elif isinstance(picked, (tuple, list)) and len(picked) == 1:
+                custom_start = custom_end = picked[0]
+            elif picked is not None:
+                custom_start = custom_end = picked
 
-st.divider()
+        start, end = resolve_fatigue_range(range_choice, today, custom_start, custom_end)
+        windowed_df = model_df[(model_df["date"] >= start) & (model_df["date"] <= end)]
 
-# ==========================================================
-# CALENDAR
-# ==========================================================
+        if windowed_df.empty:
+            st.caption("No data in the selected range.")
+        else:
+            st.plotly_chart(fatigue_model_figure(windowed_df), use_container_width=True)
 
-st.subheader("Calendar")
+        session_loads = fmodel.compute_session_loads(log_df)
+        if session_loads.empty:
+            st.caption(
+                "No session load data yet - log a Pre-session set AND a Post-session set "
+                "on the same day to start building this. It compares pre- to "
+                "post-session velocity to work out how hard each session was, then "
+                "tracks that over time."
+            )
+        else:
+            st.caption(
+                f"{len(session_loads)} session(s) with both Pre- and Post-session data "
+                f"logged so far - the more of those, the more this model reflects reality "
+                f"rather than rest-day decay."
+            )
 
-sessions_df = cal.compute_sessions(log_df)
+    with st.expander("ℹ️ How this works"):
+        st.markdown(EXPLAINER_LONG_TERM)
 
-if sessions_df.empty:
-    st.caption("Log some reps to start building your calendar.")
-else:
-    fatigue_df = fmodel.compute_fatigue_model(log_df)
-    weekly_df = cal.compute_weekly_summary(sessions_df, fatigue_df)
+    st.divider()
 
-    month_options = sorted(sessions_df["rep_date"].apply(lambda d: (d.year, d.month)).unique(), reverse=True)
-    today_ym = (date.today().year, date.today().month)
-    default_index = month_options.index(today_ym) if today_ym in month_options else 0
-    month_labels = [date(y, m, 1).strftime("%B %Y") for (y, m) in month_options]
+    # ==========================================================
+    # UPLOAD & PROCESS A REP
+    # ==========================================================
 
-    selected_label = st.selectbox("Month", month_labels, index=default_index, key="calendar_month_select")
-    year, month = month_options[month_labels.index(selected_label)]
-
-    st.markdown(
-        cal.build_calendar_html(year, month, sessions_df, weekly_df),
-        unsafe_allow_html=True,
+    uploaded_files = st.file_uploader(
+        "Upload accelerometer CSV(s)", type=["csv"], accept_multiple_files=True,
     )
 
-    month_start = date(year, month, 1)
-    month_end = (date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)) - timedelta(days=1)
-    weeks_this_month = weekly_df[
-        (weekly_df["week_end"] >= month_start) & (weekly_df["week_start"] <= month_end)
-    ]
-    if not weeks_this_month.empty:
-        st.caption("Weekly summary")
-        wk = weeks_this_month.copy()
-        wk["Week"] = wk.apply(lambda r: f"{r['week_start'].strftime('%d %b')} - {r['week_end'].strftime('%d %b')}", axis=1)
-        wk["Sessions"] = wk["sessions"]
-        wk["Duration (min)"] = wk["total_duration_min"].round(0)
-        wk["Total load"] = wk["total_session_load"].round(1)
-        wk["Avg velocity"] = wk["avg_velocity_ms"].round(2)
-        wk["Best velocity"] = wk["best_velocity_ms"].round(2)
-        wk["Fatigue"] = pd.to_numeric(wk["end_fatigue"], errors="coerce").round(1)
-        wk["Capacity"] = pd.to_numeric(wk["end_capacity"], errors="coerce").round(1)
-        wk["Freshness"] = pd.to_numeric(wk["end_freshness"], errors="coerce").round(1)
-        st.dataframe(
-            wk[["Week", "Sessions", "Duration (min)", "Total load", "Avg velocity",
-                "Best velocity", "Fatigue", "Capacity", "Freshness"]],
-            use_container_width=True, hide_index=True,
+    if uploaded_files:
+        file_names = [f.name for f in uploaded_files]
+        active_name = st.selectbox("Which file are you working on?", file_names)
+        active_file = next(f for f in uploaded_files if f.name == active_name)
+
+        # Read the CSV fresh each time the active file is selected (cheap for
+        # accelerometer-sized files, and keeps this simple to reason about).
+        active_file.seek(0)
+        try:
+            df = pd.read_csv(active_file)
+        except Exception as e:
+            st.error(f"Couldn't read '{active_name}' as a CSV: {e}")
+            st.stop()
+
+        if df.shape[1] < 4:
+            st.error(
+                f"'{active_name}' has only {df.shape[1]} column(s) - expected at least 4 "
+                "(time, gFx, gFy, gFz)."
+            )
+            st.stop()
+
+        try:
+            trace = fp.load_full_trace(df)
+        except Exception as e:
+            st.error(f"Couldn't process '{active_name}': {e}")
+            st.stop()
+
+        slider_key = f"quiet_start_{active_name}_{active_file.size}"
+        if slider_key not in st.session_state:
+            st.session_state[slider_key] = round(fp.suggest_quiet_start_s(trace), 2)
+
+        quiet_start_s = st.slider(
+            "Quiet-hang start (s)",
+            min_value=float(trace.t[0]),
+            max_value=float(trace.t[-1]),
+            step=0.05,
+            key=slider_key,
         )
 
-    days_in_month = sessions_df[
-        sessions_df["rep_date"].apply(lambda d: d.year == year and d.month == month)
-    ]
-    if not days_in_month.empty:
-        day_options = sorted(days_in_month["rep_date"].tolist(), reverse=True)
+        st.plotly_chart(full_trace_figure(trace, quiet_start_s), use_container_width=True)
 
-        def _day_label(d):
-            row = days_in_month[days_in_month["rep_date"] == d].iloc[0]
-            base = d.strftime("%a %d %b")
-            return f"{base} - {row['session_title']}" if row["session_title"] else base
+        rep_category = st.selectbox("Rep type", REP_CATEGORIES, index=1)  # default Mid-session
 
-        day_labels = [_day_label(d) for d in day_options]
+        col1, col2 = st.columns(2)
+        with col1:
+            rep_date = st.date_input("Date", value=date.today())
+        with col2:
+            note = st.text_input("Note (optional)", placeholder="e.g. session 2, rep 3")
 
-        st.caption(
-            "The grid above is read-only (Streamlit can't wire clicks onto it reliably) - "
-            "pick a session here to view or edit it instead."
+        duration_override = st.number_input(
+            "Session length, minutes (optional - only needed if you're uploading well "
+            "after the session, since timestamps alone won't reflect the real duration)",
+            min_value=0, value=0, step=5,
         )
-        selected_day_label = st.selectbox("Session detail", day_labels, key="calendar_day_select")
-        selected_day = day_options[day_labels.index(selected_day_label)]
-        day_row = days_in_month[days_in_month["rep_date"] == selected_day].iloc[0]
 
-        if day_row["session_title"]:
-            st.markdown(f"**{day_row['session_title']}**")
+        if rep_category in REP_CATEGORY_TARGETS:
+            target = REP_CATEGORY_TARGETS[rep_category]
+            day_str = rep_date.strftime("%Y-%m-%d")
+            count_so_far = 0
+            if not log_df.empty:
+                count_so_far = int((
+                    (log_df["rep_date"] == day_str) & (log_df["category"] == rep_category)
+                ).sum())
+            st.caption(f"{rep_category} reps logged for {day_str}: {count_so_far} of {target}")
 
-        d1, d2, d3, d4 = st.columns(4)
-        d1.metric("Duration", f"{day_row['duration_min']:.0f} min")
-        d2.metric("Session load", f"{day_row['session_load']:.0f}" if pd.notna(day_row["session_load"]) else "-")
-        d3.metric("Avg velocity", f"{day_row['avg_velocity_ms']:.2f} m/s")
-        d4.metric("Peak velocity", f"{day_row['peak_velocity_ms']:.2f} m/s")
-        st.caption(
-            f"{int(day_row['pre_reps'])} pre-session, {int(day_row['mid_reps'])} mid-session, "
-            f"{int(day_row['post_reps'])} post-session rep(s) - duration "
-            + ("set manually" if day_row["duration_is_override"] else "estimated from upload times")
-        )
-        if day_row["session_notes"]:
-            st.caption(f"📝 {day_row['session_notes']}")
+        process_clicked = st.button("Process rep", type="primary", use_container_width=True)
 
-        with st.expander("Edit this session"):
-            edit_title = st.text_input(
-                "Title", value=day_row["session_title"],
-                placeholder="e.g. Kilnsey session", key=f"title_input_{selected_day.isoformat()}",
-            )
-            edit_notes = st.text_area(
-                "Notes", value=day_row["session_notes"],
-                placeholder="Conditions, how it felt, anything worth remembering",
-                key=f"notes_input_{selected_day.isoformat()}",
-            )
-            edit_duration = st.number_input(
-                "Session length, minutes (0 clears the override and reverts to the "
-                "upload-time estimate)",
-                min_value=0,
-                value=int(day_row["duration_min"]) if day_row["duration_is_override"] else 0,
-                step=5, key=f"override_input_{selected_day.isoformat()}",
-            )
-            if st.button("Save", type="primary", key=f"save_session_{selected_day.isoformat()}"):
-                log_df = set_session_details(
-                    log_df, selected_day.isoformat(), edit_duration, edit_title, edit_notes
+        result_key = f"result_{active_name}_{active_file.size}"
+
+        if process_clicked:
+            try:
+                result = fp.process_rep(df, quiet_start_s)
+                st.session_state[result_key] = result
+            except ValueError as e:
+                st.session_state.pop(result_key, None)
+                st.error(str(e))
+
+        if result_key in st.session_state:
+            result = st.session_state[result_key]
+
+            for w in result.warnings:
+                st.warning(w)
+
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Average velocity", f"{result.avg_velocity_ms:.2f} m/s")
+            m2.metric("Peak velocity", f"{result.peak_velocity_ms:.2f} m/s")
+            m3.metric("Rep duration", f"{result.movement_duration_s:.2f} s")
+
+            st.plotly_chart(rep_velocity_figure(result), use_container_width=True)
+
+            if st.button("Save to log", use_container_width=True):
+                row = {
+                    "logged_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "rep_date": rep_date.strftime("%Y-%m-%d"),
+                    "category": rep_category,
+                    "note": note,
+                    "filename": active_name,
+                    "avg_velocity_ms": round(result.avg_velocity_ms, 4),
+                    "peak_velocity_ms": round(result.peak_velocity_ms, 4),
+                    "movement_duration_s": round(result.movement_duration_s, 4),
+                    "quiet_start_s": round(result.quiet_start_s, 4),
+                    "f95_Hz": round(result.f95_Hz, 4),
+                    "fc_Hz": round(result.fc_Hz, 4),
+                    "start_reason": result.start_reason,
+                    "end_reason": result.end_reason,
+                    "duration_override_min": duration_override if duration_override > 0 else "",
+                    "session_title": "",
+                    "session_notes": "",
+                }
+                st.session_state["pending_reps"].append(row)
+                log_df = pd.concat([log_df, pd.DataFrame([row])], ignore_index=True)
+                st.info(
+                    f"Logged '{active_name}' as a {rep_category.lower()} rep - saved locally for "
+                    f"now. Use the 'Save session to Google Sheets' button near the top when "
+                    f"you're done for the day."
                 )
-                st.success(f"Saved changes for {selected_day.isoformat()}.")
-                st.rerun()
 
-        with st.expander("Reps logged this day"):
-            day_log = log_df[log_df["rep_date"] == selected_day.isoformat()]
+            with st.expander("Processing details"):
+                st.write(
+                    f"- Quiet-hang mean: `{result.quiet_mean_g:.5f}` g, "
+                    f"sd: `{result.quiet_sd_g:.5f}` g\n"
+                    f"- Movement-start threshold: `{result.start_thresh_g:.5f}` g "
+                    f"({result.start_reason})\n"
+                    f"- Movement end: {result.end_reason}\n"
+                    f"- Spectral cutoff: f95 = `{result.f95_Hz:.2f}` Hz, "
+                    f"filter cutoff = `{result.fc_Hz:.2f}` Hz"
+                )
+                st.plotly_chart(spectral_figure(result), use_container_width=True)
+
+                cropped_df = pd.DataFrame({
+                    "TimeRel_s": result.t_rel,
+                    "Velocity_mps": result.v_mov_ms,
+                    "Resultant_corr_filt_g": result.res_mov_corr_g_f,
+                })
+                st.download_button(
+                    "Download cropped/filtered rep data (CSV)",
+                    data=cropped_df.to_csv(index=False),
+                    file_name=f"{Path(active_name).stem}_cropped_filtered.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+    else:
+        st.info("Upload one or more CSV files to log a new rep.")
+
+    with st.expander("ℹ️ How this works"):
+        st.markdown(f"**Rep categories**\n\n{EXPLAINER_REP_CATEGORIES}")
+        st.markdown(f"**Session upload**\n\n{EXPLAINER_SESSION_UPLOAD}")
+
+    st.divider()
+
+    # ==========================================================
+    # HISTORY
+    # ==========================================================
+
+    st.subheader("History")
+
+    with st.expander("Restore or merge a backed-up log"):
+        st.caption(
+            "If your log ever gets wiped (e.g. a Streamlit Community Cloud app "
+            "waking up after being asleep), upload a previously downloaded "
+            "fatigue_log.csv here to merge it back in."
+        )
+        restore_file = st.file_uploader(
+            "Upload a backed-up fatigue_log.csv", type=["csv"], key="restore_uploader",
+        )
+        if restore_file is not None:
+            try:
+                restore_df = pd.read_csv(restore_file)
+            except Exception as e:
+                st.error(f"Couldn't read that file: {e}")
+                restore_df = None
+
+            if restore_df is not None:
+                required_cols = {"logged_at", "rep_date", "avg_velocity_ms", "peak_velocity_ms"}
+                missing = required_cols - set(restore_df.columns)
+                if missing:
+                    st.error(
+                        f"That doesn't look like a fatigue log - missing column(s): "
+                        f"{', '.join(sorted(missing))}"
+                    )
+                else:
+                    if "category" not in restore_df.columns or restore_df["category"].isna().all():
+                        restore_df["category"] = "Pre-session"
+                        st.caption(
+                            "This file predates rep categories - treating all its rows "
+                            "as Pre-session."
+                        )
+                    st.write(f"Found {len(restore_df)} row(s) in the uploaded file.")
+                    if st.button("Merge into current log", use_container_width=True):
+                        for col in LOG_COLUMNS:
+                            if col not in restore_df.columns:
+                                restore_df[col] = pd.NA
+                        merged = pd.concat([log_df, restore_df[LOG_COLUMNS]], ignore_index=True)
+                        merged = merged.drop_duplicates()
+                        save_log(merged)
+                        log_df = merged
+                        st.success(f"Merged - log now has {len(merged)} row(s).")
+
+    if log_df.empty:
+        st.caption("No reps logged yet - process a rep above and hit 'Save to log'.")
+    else:
+        daily_df = compute_daily_summary(log_df, category="Pre-session")
+        if daily_df.empty:
+            st.caption("No Pre-session reps logged yet - the daily chart is based on those.")
+        else:
+            st.plotly_chart(daily_summary_figure(daily_df), use_container_width=True)
+
+        with st.expander("Per-rep detail"):
+            st.plotly_chart(history_figure(log_df), use_container_width=True)
             st.dataframe(
-                day_log[["logged_at", "category", "note",
-                         "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
+                log_df[["logged_at", "rep_date", "category", "note", "filename",
+                        "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
                 use_container_width=True,
                 hide_index=True,
             )
+
+        dl_col, clear_col = st.columns(2)
+        with dl_col:
+            st.download_button(
+                "Download full log (CSV)",
+                data=log_df.to_csv(index=False),
+                file_name="fatigue_log.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        with clear_col:
+            if st.button("Clear log", use_container_width=True):
+                st.session_state["confirm_clear"] = True
+
+        if st.session_state.get("confirm_clear"):
+            st.warning("This deletes every logged rep. Are you sure?")
+            yes_col, no_col = st.columns(2)
+            if yes_col.button("Yes, delete everything", use_container_width=True):
+                clear_log()
+                st.session_state["confirm_clear"] = False
+                st.rerun()
+            if no_col.button("Cancel", use_container_width=True):
+                st.session_state["confirm_clear"] = False
+
+    st.divider()
+
+    # ==========================================================
+    # CALENDAR
+    # ==========================================================
+
+    st.subheader("Calendar")
+
+    sessions_df = cal.compute_sessions(log_df)
+
+    if sessions_df.empty:
+        st.caption("Log some reps to start building your calendar.")
+    else:
+        fatigue_df = fmodel.compute_fatigue_model(log_df)
+        weekly_df = cal.compute_weekly_summary(sessions_df, fatigue_df)
+
+        month_options = sorted(sessions_df["rep_date"].apply(lambda d: (d.year, d.month)).unique(), reverse=True)
+        today_ym = (date.today().year, date.today().month)
+        default_index = month_options.index(today_ym) if today_ym in month_options else 0
+        month_labels = [date(y, m, 1).strftime("%B %Y") for (y, m) in month_options]
+
+        selected_label = st.selectbox("Month", month_labels, index=default_index, key="calendar_month_select")
+        year, month = month_options[month_labels.index(selected_label)]
+
+        st.markdown(
+            cal.build_calendar_html(year, month, sessions_df, weekly_df),
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "🔵 Light · 🟡 Moderate · 🔴 Heavy - relative to your own recent typical session "
+            "load (not a fixed scale, and not a validated overtraining measure - a quick "
+            "\"does this stand out\" read). ⬜ No colour means no Pre/Post pairing that day to "
+            "compute a load from."
+        )
+
+        month_start = date(year, month, 1)
+        month_end = (date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)) - timedelta(days=1)
+        weeks_this_month = weekly_df[
+            (weekly_df["week_end"] >= month_start) & (weekly_df["week_start"] <= month_end)
+        ]
+        if not weeks_this_month.empty:
+            st.caption("Weekly summary")
+            wk = weeks_this_month.copy()
+            wk["Week"] = wk.apply(lambda r: f"{r['week_start'].strftime('%d %b')} - {r['week_end'].strftime('%d %b')}", axis=1)
+            wk["Sessions"] = wk["sessions"]
+            wk["Duration (min)"] = wk["total_duration_min"].round(0)
+            wk["Total load"] = wk["total_session_load"].round(1)
+            wk["Avg velocity"] = wk["avg_velocity_ms"].round(2)
+            wk["Best velocity"] = wk["best_velocity_ms"].round(2)
+            wk["Fatigue"] = pd.to_numeric(wk["end_fatigue"], errors="coerce").round(1)
+            wk["Capacity"] = pd.to_numeric(wk["end_capacity"], errors="coerce").round(1)
+            wk["Freshness"] = pd.to_numeric(wk["end_freshness"], errors="coerce").round(1)
+            st.dataframe(
+                wk[["Week", "Sessions", "Duration (min)", "Total load", "Avg velocity",
+                    "Best velocity", "Fatigue", "Capacity", "Freshness"]],
+                use_container_width=True, hide_index=True,
+            )
+
+        days_in_month = sessions_df[
+            sessions_df["rep_date"].apply(lambda d: d.year == year and d.month == month)
+        ]
+        if not days_in_month.empty:
+            day_options = sorted(days_in_month["rep_date"].tolist(), reverse=True)
+
+            def _day_label(d):
+                row = days_in_month[days_in_month["rep_date"] == d].iloc[0]
+                base = d.strftime("%a %d %b")
+                return f"{base} - {row['session_title']}" if row["session_title"] else base
+
+            day_labels = [_day_label(d) for d in day_options]
+
+            st.caption(
+                "The grid above is read-only (Streamlit can't wire clicks onto it reliably) - "
+                "pick a session here to view or edit it instead."
+            )
+            selected_day_label = st.selectbox("Session detail", day_labels, key="calendar_day_select")
+            selected_day = day_options[day_labels.index(selected_day_label)]
+            day_row = days_in_month[days_in_month["rep_date"] == selected_day].iloc[0]
+
+            if day_row["session_title"]:
+                st.markdown(f"**{day_row['session_title']}**")
+
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("Duration", f"{day_row['duration_min']:.0f} min")
+            d2.metric("Session load", f"{day_row['session_load']:.0f}" if pd.notna(day_row["session_load"]) else "-")
+            d3.metric("Avg velocity", f"{day_row['avg_velocity_ms']:.2f} m/s")
+            d4.metric("Peak velocity", f"{day_row['peak_velocity_ms']:.2f} m/s")
+
+            load_band_icon = {"light": "🔵", "moderate": "🟡", "heavy": "🔴"}.get(day_row.get("load_band"))
+            if load_band_icon:
+                ratio = day_row.get("relative_load_ratio")
+                ratio_text = f" ({ratio:.0%} of recent typical)" if pd.notna(ratio) else " (no baseline yet)"
+                st.caption(f"{load_band_icon} {str(day_row['load_band']).capitalize()} session{ratio_text}")
+
+            st.caption(
+                f"{int(day_row['pre_reps'])} pre-session, {int(day_row['mid_reps'])} mid-session, "
+                f"{int(day_row['post_reps'])} post-session rep(s) - duration "
+                + ("set manually" if day_row["duration_is_override"] else "estimated from upload times")
+            )
+            if day_row["session_notes"]:
+                st.caption(f"📝 {day_row['session_notes']}")
+
+            with st.expander("Edit this session"):
+                edit_title = st.text_input(
+                    "Title", value=day_row["session_title"],
+                    placeholder="e.g. Kilnsey session", key=f"title_input_{selected_day.isoformat()}",
+                )
+                edit_notes = st.text_area(
+                    "Notes", value=day_row["session_notes"],
+                    placeholder="Conditions, how it felt, anything worth remembering",
+                    key=f"notes_input_{selected_day.isoformat()}",
+                )
+                edit_duration = st.number_input(
+                    "Session length, minutes (0 clears the override and reverts to the "
+                    "upload-time estimate)",
+                    min_value=0,
+                    value=int(day_row["duration_min"]) if day_row["duration_is_override"] else 0,
+                    step=5, key=f"override_input_{selected_day.isoformat()}",
+                )
+                if st.button("Save", type="primary", key=f"save_session_{selected_day.isoformat()}"):
+                    log_df = set_session_details(
+                        log_df, selected_day.isoformat(), edit_duration, edit_title, edit_notes
+                    )
+                    st.success(f"Saved changes for {selected_day.isoformat()}.")
+                    st.rerun()
+
+            with st.expander("Reps logged this day"):
+                day_log = log_df[log_df["rep_date"] == selected_day.isoformat()]
+                st.dataframe(
+                    day_log[["logged_at", "category", "note",
+                             "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+    with st.expander("ℹ️ How this works"):
+        st.markdown(EXPLAINER_CALENDAR)
+
+
+with tab_about:
+    st.title("The Nerdy bit: how does VECTOR work?")
+
+    st.write(
+        "VECTOR at its core is a neuromuscular fatigue-measuring tool. This type "
+        "of fatigue is the driving factor limiting climbing performance. "
+        f"Fundamentally, neuromuscular fatigue is a breakdown of your brain’s "
+        "ability to tell your muscles to contract. This results in reduced force "
+        "output and coordination."
+    )
+
+    st.write(
+        "It is currently not feasible to measure how strong the connection "
+        "between brain and muscle is directly, so the next best thing is to "
+        "measure performance and strategy in a movement relevant to the sport. "
+        "The pull-up is perfect for this, as, just like in climbing, it requires "
+        "lots of muscle groups to work together and produce lots of force to "
+        "complete the movement. VECTOR measures the maximum velocity and the "
+        "average velocity that you are able to achieve in a pull-up. The maximum "
+        "velocity gives insight into the peak power capacity of the system, and "
+        "the average velocity reflects how well coordinated that force "
+        "application is. VECTOR then tracks how these metrics change across a "
+        "session and between sessions to give you a detailed picture of how hard "
+        "your training sessions are and how they are progressing. The bigger the "
+        "load number, the greater the change in your pull-up. The changes that "
+        "VECTOR measures are demonstrated in this graph."
+    )
+
+    st.plotly_chart(about_pre_post_velocity_figure(), use_container_width=True)
+    st.caption("Illustrative example - not live data from your own sessions.")
+
+    st.write(
+        "After a hard climbing session, the pull-up curve flattens. This is "
+        "because the body is producing less force, and therefore this results "
+        "in a slower pull-up. Because the pull-up movement requires the "
+        "coordination of lots of muscle groups to produce force together, "
+        "changes in the pull-up correlate with reductions in climbing "
+        f"performance. This is what drives the within-session “send” "
+        "readiness feature. The daily readiness feature works on a similar "
+        f"premise but compares this session's pre-pull-ups to those recorded in "
+        "the last 2 weeks. This gives you information to help make your "
+        f"training as productive as possible on any given day. For example, if "
+        f"the day’s planned session requires a high degree of readiness I.e "
+        "a power session. Then a high degree of readiness is required to "
+        "properly execute the session and get the adaptations required. If the "
+        f"athlete doesn’t have the required readiness, VECTOR will inform "
+        "them. This then helps you, the climber, to make smarter training "
+        "decisions, avoid injury and overtraining. This mirrors the "
+        "countermovement jump-based monitoring approach, which is commonplace "
+        "across team sports."
+    )
+
+    st.write(
+        "The difference between pre- and post-session pull-up characteristics "
+        "informs the session load calculations, which in turn feed the "
+        "long-term performance model. Load is calculated as the total "
+        "percentage difference in average and peak velocity between pre- and "
+        "post-session pull-ups. This load score is then averaged in different "
+        "ways to model fatigue accumulation and changes in overall capacity. "
+        "The fatigue element of the performance model reacts quickly to changes "
+        "in session load using an exponentially weighted moving average, "
+        "whereas the capacity score is a rolling 35-day average. The difference "
+        "between these two scores on a given day is the freshness metric."
+    )
+
+    st.write(
+        f"VECTOR’s performance model is based on a single measure, so it "
+        f"is not a substitute for a coach’s judgement or an athlete’s "
+        "own sense of how a session felt. What VECTOR enables is something "
+        "climbing training currently lacks: a quantifiable way to track fatigue "
+        "over time rather than relying on feel alone."
+    )
+
+    st.markdown("**VECTOR: Measuring climbs with direction and magnitude.**")
