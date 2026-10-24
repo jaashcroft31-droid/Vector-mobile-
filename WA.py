@@ -17,6 +17,12 @@ Reps are logged as one of three categories:
     Post-session - 3 reps done after a session; not analysed yet, logged
                    for a future session-load feature.
 
+Sessions can also be added by hand from the calendar (category
+"Manual session" - one row, no velocity data) with a date, start time,
+title, notes, duration and an estimated load, and the load of any session
+can be overridden. Both feed the long-term model and calendar colours via
+fatigue_model.compute_session_loads().
+
 The log lives in a Google Sheet (not a local file), so it survives
 Streamlit Community Cloud putting the app to sleep. See README.md for the
 one-time Google Sheets setup.
@@ -26,7 +32,7 @@ Run locally with:
     streamlit run app.py
 """
 
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -46,10 +52,15 @@ LOG_COLUMNS = [
     "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s",
     "quiet_start_s", "f95_Hz", "fc_Hz", "start_reason", "end_reason",
     "duration_override_min", "session_title", "session_notes",
+    "session_time", "load_override",
 ]
 
 REP_CATEGORIES = ["Pre-session", "Mid-session", "Post-session"]
 REP_CATEGORY_TARGETS = {"Pre-session": 3, "Post-session": 3}  # Mid-session has no fixed count
+
+# Sessions added by hand in the calendar. Deliberately not in
+# REP_CATEGORIES, so it never shows up in the rep-upload dropdown.
+MANUAL_CATEGORY = fmodel.MANUAL_CATEGORY
 
 # Readiness bands: percentage difference of today's daily-mean velocity vs
 # the mean of the previous READINESS_BASELINE_DAYS days' daily means.
@@ -119,7 +130,11 @@ EXPLAINER_CALENDAR = (
     "normal one, red for a session that stood out as unusually hard. A "
     "weekly summary totals up time, load, and your Fatigue/Capacity/Freshness "
     "for that week, and tapping into any day lets you add a title and notes, "
-    "or fix the recorded session length if you uploaded it well after the fact."
+    "fix the recorded session length if you uploaded it well after the fact, "
+    "or replace the calculated load with your own value. If you trained "
+    "without recording pull-ups, add the session by hand with an estimated "
+    "load so it still counts towards Fatigue, Capacity and Freshness. Loads "
+    "entered by hand are marked with an asterisk."
 )
 
 EXPLAINER_SESSION_UPLOAD = (
@@ -189,11 +204,12 @@ def load_log() -> pd.DataFrame:
 def save_log(log_df: pd.DataFrame):
     """Writes the full log to Google Sheets. Called only for deliberate,
     infrequent actions (committing a session, merging a restore, clearing,
-    setting a duration override) - NOT on every single rep, which is what
-    was tripping the read/write quota. Always clears the pending-reps
-    buffer too, since whatever's in log_df here is either the committed
-    log with no pending reps, or a caller that has already merged pending
-    reps into it and is about to make them official."""
+    setting a duration override, adding a manual session) - NOT on every
+    single rep, which is what was tripping the read/write quota. Always
+    clears the pending-reps buffer too, since whatever's in log_df here is
+    either the committed log with no pending reps, or a caller that has
+    already merged pending reps into it and is about to make them
+    official."""
     conn = get_gsheets_conn()
     conn.update(spreadsheet=get_spreadsheet_url(), worksheet=GSHEETS_WORKSHEET, data=log_df[LOG_COLUMNS])
     st.cache_data.clear()  # so the next read (e.g. after st.rerun()) isn't served stale cache
@@ -201,18 +217,58 @@ def save_log(log_df: pd.DataFrame):
 
 
 def set_session_details(
-    current_df: pd.DataFrame, rep_date_str: str, minutes: float, title: str, notes: str
+    current_df: pd.DataFrame, rep_date_str: str, minutes: float, title: str, notes: str,
+    load: float, session_time: str | None = None,
 ) -> pd.DataFrame:
     """Sets the session-length override (0 clears it, reverting to the
-    timestamp-based estimate), title, and notes for a day, writing all
-    three onto every row logged that day in a single request - so the
-    editor's one Save button covers everything at once, and the values
-    survive even if an individual rep is later removed."""
+    timestamp-based estimate), title, notes, load override (0 clears it,
+    reverting to the load calculated from Pre/Post velocity) and, if
+    given, start time for a day, writing them onto every row logged that
+    day in a single request - so the editor's one Save button covers
+    everything at once, and the values survive even if an individual rep
+    is later removed."""
     updated = current_df.copy()
+    # Cast to object first so writing "" or a string into a column that
+    # pandas read as all-float doesn't raise a dtype warning.
+    for col in ("duration_override_min", "session_title", "session_notes", "session_time", "load_override"):
+        updated[col] = updated[col].astype(object)
     mask = updated["rep_date"] == rep_date_str
     updated.loc[mask, "duration_override_min"] = minutes if minutes > 0 else ""
     updated.loc[mask, "session_title"] = title
     updated.loc[mask, "session_notes"] = notes
+    updated.loc[mask, "load_override"] = round(float(load), 1) if load > 0 else ""
+    if session_time is not None:
+        updated.loc[mask, "session_time"] = session_time
+    save_log(updated)
+    return updated
+
+
+def add_manual_session(
+    current_df: pd.DataFrame, session_date: date, start_time: time,
+    title: str, notes: str, minutes: float, load: float,
+) -> pd.DataFrame:
+    """Adds a session by hand: one MANUAL_CATEGORY row with no velocity
+    data, carrying the date, start time, title, notes, duration and
+    estimated load. Written straight to Google Sheets (like the session
+    editor), which also commits any pending reps in current_df."""
+    row = {col: None for col in LOG_COLUMNS}
+    row.update({
+        "logged_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "rep_date": session_date.strftime("%Y-%m-%d"),
+        "category": MANUAL_CATEGORY,
+        "note": "",
+        "filename": "",
+        "start_reason": "",
+        "end_reason": "",
+        "duration_override_min": minutes if minutes > 0 else "",
+        "session_title": title,
+        "session_notes": notes,
+        "session_time": start_time.strftime("%H:%M"),
+        "load_override": round(float(load), 1) if load > 0 else "",
+    })
+    updated = pd.concat(
+        [current_df, pd.DataFrame([row], columns=LOG_COLUMNS)], ignore_index=True
+    )
     save_log(updated)
     return updated
 
@@ -682,6 +738,15 @@ def about_pre_post_velocity_figure() -> go.Figure:
     return fig
 
 
+def _parse_session_time(raw: str) -> time:
+    """Turns a stored "HH:MM" start time back into a time for the editor's
+    time picker, falling back to 18:00 if it's missing or unreadable."""
+    try:
+        return datetime.strptime(str(raw).strip(), "%H:%M").time()
+    except ValueError:
+        return time(18, 0)
+
+
 # ==========================================================
 # MAIN APP
 # ==========================================================
@@ -844,15 +909,20 @@ with tab_main:
         if session_loads.empty:
             st.caption(
                 "No session load data yet - log a Pre-session set AND a Post-session set "
-                "on the same day to start building this. It compares pre- to "
-                "post-session velocity to work out how hard each session was, then "
-                "tracks that over time."
+                "on the same day to start building this, or add a session with an "
+                "estimated load in the Calendar below. Pre- vs post-session velocity "
+                "shows how hard each session was, which is then tracked over time."
             )
         else:
+            n_by_hand = int(session_loads["load_is_override"].sum())
+            n_calculated = len(session_loads) - n_by_hand
+            by_hand_text = (
+                f", plus {n_by_hand} with a load entered by hand" if n_by_hand else ""
+            )
             st.caption(
-                f"{len(session_loads)} session(s) with both Pre- and Post-session data "
-                f"logged so far - the more of those, the more this model reflects reality "
-                f"rather than rest-day decay."
+                f"{n_calculated} session(s) with both Pre- and Post-session data "
+                f"logged so far{by_hand_text} - the more of those, the more this model "
+                f"reflects reality rather than rest-day decay."
             )
 
     with st.expander("ℹ️ How this works"):
@@ -976,6 +1046,8 @@ with tab_main:
                     "duration_override_min": duration_override if duration_override > 0 else "",
                     "session_title": "",
                     "session_notes": "",
+                    "session_time": "",
+                    "load_override": "",
                 }
                 st.session_state["pending_reps"].append(row)
                 log_df = pd.concat([log_df, pd.DataFrame([row])], ignore_index=True)
@@ -1066,6 +1138,10 @@ with tab_main:
                         log_df = merged
                         st.success(f"Merged - log now has {len(merged)} row(s).")
 
+    # Manual sessions have no velocity data, so they're left out of the
+    # per-rep charts and tables (they're still in the full log download).
+    rep_rows_df = log_df[log_df["category"] != MANUAL_CATEGORY]
+
     if log_df.empty:
         st.caption("No reps logged yet - process a rep above and hit 'Save to log'.")
     else:
@@ -1076,13 +1152,16 @@ with tab_main:
             st.plotly_chart(daily_summary_figure(daily_df), use_container_width=True)
 
         with st.expander("Per-rep detail"):
-            st.plotly_chart(history_figure(log_df), use_container_width=True)
-            st.dataframe(
-                log_df[["logged_at", "rep_date", "category", "note", "filename",
-                        "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
-                use_container_width=True,
-                hide_index=True,
-            )
+            if rep_rows_df.empty:
+                st.caption("No reps logged yet - only sessions added by hand.")
+            else:
+                st.plotly_chart(history_figure(rep_rows_df), use_container_width=True)
+                st.dataframe(
+                    rep_rows_df[["logged_at", "rep_date", "category", "note", "filename",
+                                 "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
         dl_col, clear_col = st.columns(2)
         with dl_col:
@@ -1115,10 +1194,96 @@ with tab_main:
 
     st.subheader("Calendar")
 
+    # Success messages set just before an st.rerun() would vanish with the
+    # rerun, so they're stashed here and shown on the next run instead.
+    calendar_flash = st.session_state.pop("calendar_flash", None)
+    if calendar_flash:
+        st.success(calendar_flash)
+
     sessions_df = cal.compute_sessions(log_df)
 
+    # ----------------------------------------------------------
+    # ADD A SESSION BY HAND
+    # ----------------------------------------------------------
+    MANUAL_FORM_KEYS = [
+        "manual_date", "manual_time", "manual_title", "manual_notes",
+        "manual_duration", "manual_load",
+    ]
+    # Fixed once per browser session so the time picker's default doesn't
+    # shift every minute (which would reset whatever was typed in).
+    st.session_state.setdefault(
+        "manual_default_time", datetime.now().replace(second=0, microsecond=0).time()
+    )
+
+    with st.expander("➕ Add a session manually"):
+        st.caption(
+            "For days you trained without recording pull-ups. The estimated load "
+            "counts towards Fatigue, Capacity and Freshness, and the calendar colours, "
+            "just like a calculated one. Adding a session saves straight to Google "
+            "Sheets, along with any reps not yet saved."
+        )
+        with st.form("manual_session_form", clear_on_submit=False):
+            m_col1, m_col2 = st.columns(2)
+            with m_col1:
+                manual_date = st.date_input("Date", value=date.today(), key="manual_date")
+            with m_col2:
+                manual_time = st.time_input(
+                    "Start time", value=st.session_state["manual_default_time"],
+                    step=timedelta(minutes=5), key="manual_time",
+                )
+            manual_title = st.text_input(
+                "Title", placeholder="e.g. Board session at the wall", key="manual_title",
+            )
+            manual_notes = st.text_area(
+                "Description", placeholder="What you did, conditions, how it felt",
+                key="manual_notes",
+            )
+            l_col1, l_col2 = st.columns(2)
+            with l_col1:
+                manual_load = st.number_input(
+                    "Estimated load", min_value=0.0, value=0.0, step=1.0, format="%.1f",
+                    help="On the same scale as calculated loads (the % drop in average + "
+                         "peak velocity from pre- to post-session). 0 means no load.",
+                    key="manual_load",
+                )
+            with l_col2:
+                manual_duration = st.number_input(
+                    "Session length, minutes (optional)", min_value=0, value=0, step=5,
+                    key="manual_duration",
+                )
+
+            typical_loads = sessions_df["session_load"].dropna() if not sessions_df.empty else pd.Series(dtype=float)
+            if not typical_loads.empty:
+                st.caption(
+                    f"For reference, your sessions so far range from load "
+                    f"{typical_loads.min():.0f} to {typical_loads.max():.0f} "
+                    f"(average {typical_loads.mean():.0f})."
+                )
+
+            add_clicked = st.form_submit_button("Add session", type="primary", use_container_width=True)
+
+        if add_clicked:
+            existing_dates = set(sessions_df["rep_date"]) if not sessions_df.empty else set()
+            if manual_date in existing_dates:
+                st.error(
+                    f"There's already a session on {manual_date.strftime('%a %d %b %Y')}. "
+                    "Pick it under Session detail below and use Edit this session to change "
+                    "its title, notes, length or load."
+                )
+            else:
+                log_df = add_manual_session(
+                    log_df, manual_date, manual_time, manual_title.strip(),
+                    manual_notes.strip(), manual_duration, manual_load,
+                )
+                for k in MANUAL_FORM_KEYS:
+                    st.session_state.pop(k, None)
+                st.session_state["calendar_flash"] = (
+                    f"Added a session on {manual_date.strftime('%a %d %b %Y')}."
+                )
+                st.rerun()
+
     if sessions_df.empty:
-        st.caption("Log some reps to start building your calendar.")
+        st.caption("Log some reps or add a session manually to start building your calendar.")
     else:
         fatigue_df = fmodel.compute_fatigue_model(log_df)
         weekly_df = cal.compute_weekly_summary(sessions_df, fatigue_df)
@@ -1138,8 +1303,8 @@ with tab_main:
         st.caption(
             "🔵 Light · 🟡 Moderate · 🔴 Heavy - relative to your own recent typical session "
             "load (not a fixed scale, and not a validated overtraining measure - a quick "
-            "\"does this stand out\" read). ⬜ No colour means no Pre/Post pairing that day to "
-            "compute a load from."
+            "\"does this stand out\" read). ⬜ No colour means no load that day (no Pre/Post "
+            "pairing and none entered by hand). * marks a load entered by hand."
         )
 
         month_start = date(year, month, 1)
@@ -1174,7 +1339,8 @@ with tab_main:
             def _day_label(d):
                 row = days_in_month[days_in_month["rep_date"] == d].iloc[0]
                 base = d.strftime("%a %d %b")
-                return f"{base} - {row['session_title']}" if row["session_title"] else base
+                label = f"{base} - {row['session_title']}" if row["session_title"] else base
+                return f"{label} (added manually)" if int(row["reps"]) == 0 else label
 
             day_labels = [_day_label(d) for d in day_options]
 
@@ -1192,8 +1358,8 @@ with tab_main:
             d1, d2, d3, d4 = st.columns(4)
             d1.metric("Duration", f"{day_row['duration_min']:.0f} min")
             d2.metric("Session load", f"{day_row['session_load']:.0f}" if pd.notna(day_row["session_load"]) else "-")
-            d3.metric("Avg velocity", f"{day_row['avg_velocity_ms']:.2f} m/s")
-            d4.metric("Peak velocity", f"{day_row['peak_velocity_ms']:.2f} m/s")
+            d3.metric("Avg velocity", f"{day_row['avg_velocity_ms']:.2f} m/s" if pd.notna(day_row["avg_velocity_ms"]) else "-")
+            d4.metric("Peak velocity", f"{day_row['peak_velocity_ms']:.2f} m/s" if pd.notna(day_row["peak_velocity_ms"]) else "-")
 
             load_band_icon = {"light": "🔵", "moderate": "🟡", "heavy": "🔴"}.get(day_row.get("load_band"))
             if load_band_icon:
@@ -1201,11 +1367,28 @@ with tab_main:
                 ratio_text = f" ({ratio:.0%} of recent typical)" if pd.notna(ratio) else " (no baseline yet)"
                 st.caption(f"{load_band_icon} {str(day_row['load_band']).capitalize()} session{ratio_text}")
 
-            st.caption(
-                f"{int(day_row['pre_reps'])} pre-session, {int(day_row['mid_reps'])} mid-session, "
-                f"{int(day_row['post_reps'])} post-session rep(s) - duration "
-                + ("set manually" if day_row["duration_is_override"] else "estimated from upload times")
-            )
+            if pd.notna(day_row["session_load"]):
+                if day_row["load_is_override"]:
+                    calc = day_row["calculated_load"]
+                    calc_text = (
+                        f" (calculated from velocity: {calc:.0f})" if pd.notna(calc) else ""
+                    )
+                    st.caption(f"Load entered by hand{calc_text}")
+                else:
+                    st.caption("Load calculated from pre- vs post-session velocity")
+
+            time_text = f"Started {day_row['session_time']} - " if day_row["session_time"] else ""
+            if int(day_row["reps"]) == 0:
+                st.caption(
+                    f"{time_text}added manually, no reps logged - duration "
+                    + ("set manually" if day_row["duration_is_override"] else "not recorded")
+                )
+            else:
+                st.caption(
+                    f"{time_text}{int(day_row['pre_reps'])} pre-session, {int(day_row['mid_reps'])} "
+                    f"mid-session, {int(day_row['post_reps'])} post-session rep(s) - duration "
+                    + ("set manually" if day_row["duration_is_override"] else "estimated from upload times")
+                )
             if day_row["session_notes"]:
                 st.caption(f"📝 {day_row['session_notes']}")
 
@@ -1219,6 +1402,14 @@ with tab_main:
                     placeholder="Conditions, how it felt, anything worth remembering",
                     key=f"notes_input_{selected_day.isoformat()}",
                 )
+                # Start time only applies to sessions added by hand - for
+                # rep-based sessions it's implied by the upload timestamps.
+                edit_time = None
+                if day_row["is_manual"]:
+                    edit_time = st.time_input(
+                        "Start time", value=_parse_session_time(day_row["session_time"]),
+                        step=timedelta(minutes=5), key=f"time_input_{selected_day.isoformat()}",
+                    )
                 edit_duration = st.number_input(
                     "Session length, minutes (0 clears the override and reverts to the "
                     "upload-time estimate)",
@@ -1226,21 +1417,40 @@ with tab_main:
                     value=int(day_row["duration_min"]) if day_row["duration_is_override"] else 0,
                     step=5, key=f"override_input_{selected_day.isoformat()}",
                 )
+                calc_load = day_row["calculated_load"]
+                if pd.notna(calc_load):
+                    load_label = (
+                        f"Session load (0 clears your value and reverts to the calculated "
+                        f"load of {calc_load:.1f})"
+                    )
+                else:
+                    load_label = (
+                        "Session load (no Pre/Post pairing this day, so 0 leaves the "
+                        "session without a load)"
+                    )
+                edit_load = st.number_input(
+                    load_label,
+                    min_value=0.0,
+                    value=float(day_row["session_load"]) if day_row["load_is_override"] else 0.0,
+                    step=1.0, format="%.1f", key=f"load_input_{selected_day.isoformat()}",
+                )
                 if st.button("Save", type="primary", key=f"save_session_{selected_day.isoformat()}"):
                     log_df = set_session_details(
-                        log_df, selected_day.isoformat(), edit_duration, edit_title, edit_notes
+                        log_df, selected_day.isoformat(), edit_duration, edit_title, edit_notes,
+                        edit_load, edit_time.strftime("%H:%M") if edit_time is not None else None,
                     )
-                    st.success(f"Saved changes for {selected_day.isoformat()}.")
+                    st.session_state["calendar_flash"] = f"Saved changes for {selected_day.isoformat()}."
                     st.rerun()
 
-            with st.expander("Reps logged this day"):
-                day_log = log_df[log_df["rep_date"] == selected_day.isoformat()]
-                st.dataframe(
-                    day_log[["logged_at", "category", "note",
-                             "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
-                    use_container_width=True,
-                    hide_index=True,
-                )
+            if int(day_row["reps"]) > 0:
+                with st.expander("Reps logged this day"):
+                    day_log = rep_rows_df[rep_rows_df["rep_date"] == selected_day.isoformat()]
+                    st.dataframe(
+                        day_log[["logged_at", "category", "note",
+                                 "avg_velocity_ms", "peak_velocity_ms", "movement_duration_s"]],
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
     with st.expander("ℹ️ How this works"):
         st.markdown(EXPLAINER_CALENDAR)

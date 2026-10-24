@@ -17,6 +17,14 @@ session-level pull-up velocity:
                   session that finished faster than it started (rare)
                   gives a negative load.
 
+                  A load can also be entered by hand: a numeric
+                  `load_override` on any of a day's rows wins over the
+                  calculated value. That covers both editing the load of
+                  an existing session and Manual-session rows (sessions
+                  added in the calendar without any reps, which carry an
+                  estimated load) - a day with an override counts as a
+                  session even with no Pre/Post pairing.
+
     Fatigue       An exponentially weighted average of session load:
                       - on a day with a session: fatigue moves toward
                         that day's load, weighted by FATIGUE_EXPONENT
@@ -34,10 +42,10 @@ session-level pull-up velocity:
                   recent load is outstripping that base (run down).
 
 Every day in the model needs a Pre-session AND a Post-session rep set
-logged the same day to register as a "session" with a real load - days
-missing either side count as rest days (load 0) for fatigue/capacity
-purposes, which is why the model looks flat until both sides of a
-session are consistently logged.
+logged the same day (or a load entered by hand) to register as a
+"session" with a real load - days without either count as rest days
+(load 0) for fatigue/capacity purposes, which is why the model looks flat
+until both sides of a session are consistently logged.
 """
 
 from __future__ import annotations
@@ -49,6 +57,12 @@ import pandas as pd
 FATIGUE_EXPONENT = 0.2   # weight given to each new session's load
 FATIGUE_DECAY = 0.1      # fraction fatigue fades by, per rest day
 CAPACITY_WINDOW_DAYS = 35
+
+# Category for sessions added by hand in the calendar: one log row with no
+# velocity data, just date/time/title/notes/duration and an estimated load.
+# Defined here (rather than in app.py) so calendar_view and app.py share
+# the same value.
+MANUAL_CATEGORY = "Manual session"
 
 # Relative session load (for the calendar heat map): each session is
 # classified against that athlete's own recent *typical session* load -
@@ -65,42 +79,71 @@ LOAD_HEAVY_THRESHOLD = 1.3   # above 130% of recent typical -> heavy
 LOAD_TYPICAL_MIN_FLOOR = 1.0  # typical load below this is too small/noisy
                                # to classify meaningfully -> "moderate"
 
-SESSION_LOAD_COLUMNS = ["rep_date", "session_load"]
+# session_load is what the model uses. load_is_override says whether it
+# was entered by hand; calculated_load is the velocity-based value (None
+# if the day has no Pre/Post pairing), kept so the editor can show what an
+# override would revert to.
+SESSION_LOAD_COLUMNS = ["rep_date", "session_load", "load_is_override", "calculated_load"]
 MODEL_COLUMNS = ["date", "session_load", "fatigue", "capacity", "freshness"]
 RELATIVE_LOAD_COLUMNS = ["rep_date", "relative_load_ratio", "load_band"]
 
 
+def _calculated_session_load(group: pd.DataFrame) -> float | None:
+    """Velocity-based load for one day's rows, or None if the day doesn't
+    have both a Pre-session and a Post-session set."""
+    pre = group[group["category"] == "Pre-session"]
+    post = group[group["category"] == "Post-session"]
+    if pre.empty or post.empty:
+        return None
+
+    pre_avg = float(pd.to_numeric(pre["avg_velocity_ms"], errors="coerce").mean())
+    pre_peak = float(pd.to_numeric(pre["peak_velocity_ms"], errors="coerce").mean())
+    post_avg = float(pd.to_numeric(post["avg_velocity_ms"], errors="coerce").mean())
+    post_peak = float(pd.to_numeric(post["peak_velocity_ms"], errors="coerce").mean())
+
+    if pre_avg == 0 or pre_peak == 0:
+        return None
+
+    pct_diff_avg = (post_avg - pre_avg) / pre_avg
+    pct_diff_peak = (post_peak - pre_peak) / pre_peak
+    return (pct_diff_peak + pct_diff_avg) * -100
+
+
 def compute_session_loads(log_df: pd.DataFrame) -> pd.DataFrame:
-    """One row per day that has both Pre-session and Post-session reps
-    logged: that day's session load. A day with only one side (or
-    neither) simply doesn't appear here - compute_fatigue_model treats
-    any day missing from this table as a rest day (session_load = 0)."""
+    """One row per day with a session load: either a load entered by hand
+    (`load_override`, which wins), or one calculated from that day's
+    Pre-session and Post-session reps. A day with neither simply doesn't
+    appear here - compute_fatigue_model treats any day missing from this
+    table as a rest day (session_load = 0)."""
     if log_df.empty:
         return pd.DataFrame(columns=SESSION_LOAD_COLUMNS)
 
     df = log_df.copy()
     df["rep_date_parsed"] = pd.to_datetime(df["rep_date"]).dt.date
+    df["load_override_parsed"] = (
+        pd.to_numeric(df["load_override"], errors="coerce")
+        if "load_override" in df.columns else float("nan")
+    )
 
     rows = []
     for d, group in df.groupby("rep_date_parsed"):
-        pre = group[group["category"] == "Pre-session"]
-        post = group[group["category"] == "Post-session"]
-        if pre.empty or post.empty:
-            continue
+        calculated = _calculated_session_load(group)
+        overrides = group["load_override_parsed"].dropna()
 
-        pre_avg = float(pre["avg_velocity_ms"].mean())
-        pre_peak = float(pre["peak_velocity_ms"].mean())
-        post_avg = float(post["avg_velocity_ms"].mean())
-        post_peak = float(post["peak_velocity_ms"].mean())
-
-        if pre_avg == 0 or pre_peak == 0:
-            continue
-
-        pct_diff_avg = (post_avg - pre_avg) / pre_avg
-        pct_diff_peak = (post_peak - pre_peak) / pre_peak
-        session_load = (pct_diff_peak + pct_diff_avg) * -100
-
-        rows.append({"rep_date": d, "session_load": session_load})
+        if not overrides.empty:
+            rows.append({
+                "rep_date": d,
+                "session_load": float(overrides.iloc[-1]),
+                "load_is_override": True,
+                "calculated_load": calculated,
+            })
+        elif calculated is not None:
+            rows.append({
+                "rep_date": d,
+                "session_load": calculated,
+                "load_is_override": False,
+                "calculated_load": calculated,
+            })
 
     return (
         pd.DataFrame(rows, columns=SESSION_LOAD_COLUMNS)
